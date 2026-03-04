@@ -1,0 +1,111 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "Matcha-TTS",
+  "projectDescription": "A fast text-to-speech architecture with conditional flow matching for high-quality voice synthesis",
+  "theme": "palm",
+  "primaryColor": "#c89b6d",
+  "lightColor": "#7e8975",
+  "darkColor": "#281d16",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/flow-matching",
+              "concepts/text-encoder",
+              "concepts/decoder"
+            ]
+          },
+          {
+            "group": "Training",
+            "pages": [
+              "training/dataset-preparation",
+              "training/training-guide",
+              "training/custom-dataset",
+              "training/configuration",
+              "training/duration-extraction"
+            ]
+          },
+          {
+            "group": "Inference",
+            "pages": [
+              "inference/cli-usage",
+              "inference/python-api",
+              "inference/gradio-app",
+              "inference/parameters"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/onnx-export",
+              "advanced/onnx-inference",
+              "advanced/multi-speaker",
+              "advanced/pretrained-models"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Models",
+            "pages": [
+              "api/matcha-tts",
+              "api/text-encoder",
+              "api/flow-matching",
+              "api/decoder"
+            ]
+          },
+          {
+            "group": "CLI Commands",
+            "pages": [
+              "api/cli",
+              "api/data-stats",
+              "api/get-durations"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/text-processing",
+              "api/vocoder"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Conditional flow matching for fast TTS synthesis",
+    "Non-autoregressive architecture with ODE-based generation",
+    "Multi-speaker support with speaker embeddings",
+    "ONNX export for production deployment",
+    "Pre-trained models for LJSpeech and VCTK datasets",
+    "Customizable training with Hydra configuration",
+    "Real-time synthesis with adjustable speaking rate and temperature"
+  ],
+  "publicApiSurface": [
+    "MatchaTTS",
+    "MatchaTTS.synthesise()",
+    "TextEncoder",
+    "CFM (Conditional Flow Matching)",
+    "matcha-tts (CLI command)",
+    "matcha-tts-app (Gradio interface)",
+    "matcha-data-stats (data statistics generation)",
+    "matcha-tts-get-durations (duration extraction)"
+  ]
+}
