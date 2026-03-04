@@ -1,0 +1,405 @@
+---
+title: Text Processing
+description: Text normalization and phoneme conversion utilities
+---
+
+## Overview
+
+Matcha-TTS includes comprehensive text processing utilities for converting raw text into phoneme sequences that can be fed to the model. The system supports multiple cleaning methods and handles various text normalization tasks.
+
+## Core Functions
+
+### text_to_sequence()
+
+Converts text string to a sequence of symbol IDs.
+
+```python
+from matcha.text import text_to_sequence
+
+sequence, cleaned_text = text_to_sequence(
+    text="Hello, world!",
+    cleaner_names=["english_cleaners2"]
+)
+```
+
+#### Parameters
+
+<ParamField path="text" type="str" required>
+  Input text string to convert
+</ParamField>
+
+<ParamField path="cleaner_names" type="list[str]" required>
+  List of cleaner function names to apply sequentially
+  
+  **Available cleaners:**
+  - `english_cleaners`
+  - `english_cleaners2`
+  - `transliteration_cleaners`
+</ParamField>
+
+#### Returns
+
+<ResponseField name="sequence" type="list[int]">
+  List of integer IDs corresponding to phoneme symbols
+</ResponseField>
+
+<ResponseField name="cleaned_text" type="str">
+  Cleaned and phonemized text string
+</ResponseField>
+
+#### Example
+
+```python
+from matcha.text import text_to_sequence
+
+text = "Hello, this costs $50!"
+sequence, cleaned = text_to_sequence(text, ["english_cleaners2"])
+
+print(f"Original: {text}")
+print(f"Cleaned: {cleaned}")
+print(f"Sequence length: {len(sequence)}")
+print(f"First 10 IDs: {sequence[:10]}")
+
+# Output:
+# Original: Hello, this costs $50!
+# Cleaned: həloʊ, ðɪs kɔsts fɪfti dɑlɚz!
+# Sequence length: 45
+# First 10 IDs: [41, 15, 30, 7, 28, 2, 1, 6, ...]
+```
+
+### sequence_to_text()
+
+Converts sequence of IDs back to phoneme string.
+
+```python
+from matcha.text import sequence_to_text
+
+phonemes = sequence_to_text(sequence)
+```
+
+#### Parameters
+
+<ParamField path="sequence" type="list[int]" required>
+  List of integer symbol IDs
+</ParamField>
+
+#### Returns
+
+<ResponseField name="text" type="str">
+  Phoneme string representation
+</ResponseField>
+
+#### Example
+
+```python
+from matcha.text import text_to_sequence, sequence_to_text
+
+sequence, _ = text_to_sequence("Hello", ["english_cleaners2"])
+phonemes = sequence_to_text(sequence)
+
+print(phonemes)  # "həloʊ"
+```
+
+### cleaned_text_to_sequence()
+
+Converts already-cleaned phoneme text to sequence.
+
+```python
+from matcha.text import cleaned_text_to_sequence
+
+sequence = cleaned_text_to_sequence("həloʊ")
+```
+
+#### Parameters
+
+<ParamField path="cleaned_text" type="str" required>
+  Pre-cleaned phoneme text
+</ParamField>
+
+#### Returns
+
+<ResponseField name="sequence" type="list[int]">
+  List of symbol IDs
+</ResponseField>
+
+## Text Cleaners
+
+Cleaners are applied sequentially to normalize and phonemize text.
+
+### english_cleaners
+
+Basic English text cleaning:
+- Lowercase conversion
+- Number expansion ("123" → "one hundred twenty three")
+- Abbreviation expansion
+- Punctuation normalization
+
+```python
+from matcha.text.cleaners import english_cleaners
+
+cleaned = english_cleaners("Dr. Smith has 3 PhDs.")
+# "doctor smith has three p h d s"
+```
+
+### english_cleaners2
+
+Advanced cleaning with phonemization:
+- All features of `english_cleaners`
+- G2P (grapheme-to-phoneme) conversion
+- IPA phoneme output
+
+```python
+from matcha.text.cleaners import english_cleaners2
+
+cleaned = english_cleaners2("Hello, world!")
+# "həloʊ, wɜrld!"
+```
+
+### transliteration_cleaners
+
+For non-English text with transliteration:
+- Unicode normalization
+- Transliteration to Latin script
+- Basic cleaning
+
+```python
+from matcha.text.cleaners import transliteration_cleaners
+
+cleaned = transliteration_cleaners("Привет")
+# Transliterated and cleaned output
+```
+
+## Symbol Set
+
+Matcha-TTS uses a predefined symbol set including:
+
+```python
+from matcha.text.symbols import symbols
+
+print(len(symbols))  # 148 symbols
+print(symbols[:10])  # ['_', '-', '!', "'", '(', ')', ',', '.', ':', ';']
+```
+
+### Symbol Categories
+
+- **Pad symbol**: `_` (ID: 0)
+- **Punctuation**: `!`, `,`, `.`, `?`, etc.
+- **IPA consonants**: `b`, `d`, `f`, `g`, etc.
+- **IPA vowels**: `a`, `e`, `i`, `o`, `u`, etc.
+- **IPA diacritics**: Various phonetic markers
+
+## Number Expansion
+
+Automatic expansion of numbers to words:
+
+```python
+from matcha.text import text_to_sequence
+
+text = "I have 3 cats and $25."
+sequence, cleaned = text_to_sequence(text, ["english_cleaners2"])
+
+print(cleaned)
+# "aɪ hæv θri kæts ænd twɛnti faɪv dɑlɚz."
+```
+
+### Supported Number Formats
+
+- **Cardinals**: "123" → "one hundred twenty three"
+- **Ordinals**: "1st" → "first"
+- **Decimals**: "3.14" → "three point one four"
+- **Currency**: "$50" → "fifty dollars"
+- **Years**: "2023" → "twenty twenty three"
+- **Times**: "10:30" → "ten thirty"
+
+## Preprocessing Pipeline
+
+Complete preprocessing example:
+
+```python
+import torch
+from matcha.text import text_to_sequence
+from matcha.utils.utils import intersperse
+
+def preprocess_text(text: str, device: str = "cuda"):
+    """Full preprocessing pipeline for inference."""
+    
+    # Convert text to sequence
+    sequence, cleaned = text_to_sequence(
+        text,
+        cleaner_names=["english_cleaners2"]
+    )
+    
+    # Add inter-phoneme blanks (helps with stability)
+    sequence = intersperse(sequence, 0)
+    
+    # Convert to tensor
+    x = torch.LongTensor(sequence).unsqueeze(0).to(device)
+    x_lengths = torch.LongTensor([len(sequence)]).to(device)
+    
+    return {
+        "x": x,
+        "x_lengths": x_lengths,
+        "phonemes": cleaned
+    }
+
+# Usage
+processed = preprocess_text("Hello, world!")
+print(f"Phonemes: {processed['phonemes']}")
+print(f"Sequence shape: {processed['x'].shape}")
+```
+
+## Advanced Usage
+
+### Custom Cleaner
+
+Create custom text cleaning function:
+
+```python
+from matcha.text.cleaners import english_cleaners2
+
+def custom_cleaner(text: str) -> str:
+    """Custom cleaning with preprocessing."""
+    # Custom preprocessing
+    text = text.replace("&", " and ")
+    text = text.replace("%", " percent ")
+    
+    # Apply standard cleaning
+    text = english_cleaners2(text)
+    
+    return text
+
+# Register for use
+from matcha.text import cleaners
+cleaners.custom_cleaner = custom_cleaner
+
+# Use it
+sequence, cleaned = text_to_sequence(
+    "50% & more",
+    ["custom_cleaner"]
+)
+```
+
+### Batch Processing
+
+```python
+import torch
+from matcha.text import text_to_sequence
+from matcha.utils.utils import intersperse
+
+def batch_preprocess(texts: list[str], device: str = "cuda"):
+    """Preprocess multiple texts for batched inference."""
+    
+    sequences = []
+    lengths = []
+    
+    for text in texts:
+        seq, _ = text_to_sequence(text, ["english_cleaners2"])
+        seq = intersperse(seq, 0)
+        sequences.append(torch.LongTensor(seq))
+        lengths.append(len(seq))
+    
+    # Pad sequences
+    x = torch.nn.utils.rnn.pad_sequence(
+        sequences,
+        batch_first=True,
+        padding_value=0
+    ).to(device)
+    
+    x_lengths = torch.LongTensor(lengths).to(device)
+    
+    return x, x_lengths
+
+# Usage
+texts = [
+    "Hello, world!",
+    "This is a test.",
+    "Matcha-TTS is great."
+]
+
+x, x_lengths = batch_preprocess(texts)
+print(f"Batch shape: {x.shape}")  # (3, max_length)
+print(f"Lengths: {x_lengths}")    # [45, 38, 42]
+```
+
+### Phoneme Inspection
+
+```python
+from matcha.text import text_to_sequence, sequence_to_text
+
+text = "The quick brown fox."
+sequence, cleaned = text_to_sequence(text, ["english_cleaners2"])
+
+# Inspect each phoneme
+for i, phoneme_id in enumerate(sequence):
+    phoneme = sequence_to_text([phoneme_id])
+    print(f"{i:3d}: {phoneme_id:3d} -> '{phoneme}'")
+```
+
+## Intersperse Utility
+
+Add blank tokens between phonemes:
+
+```python
+from matcha.utils.utils import intersperse
+
+sequence = [1, 2, 3, 4, 5]
+interspersed = intersperse(sequence, 0)
+
+print(interspersed)
+# [0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0]
+```
+
+This improves alignment stability during training and inference.
+
+## Error Handling
+
+### Unknown Symbol
+
+```python
+try:
+    sequence = cleaned_text_to_sequence("unknown❌symbol")
+except KeyError as e:
+    print(f"Unknown symbol: {e}")
+```
+
+### Invalid Cleaner
+
+```python
+from matcha.text import UnknownCleanerException
+
+try:
+    sequence, _ = text_to_sequence(
+        "Test",
+        ["nonexistent_cleaner"]
+    )
+except UnknownCleanerException as e:
+    print(f"Error: {e}")
+    # Use valid cleaner instead
+```
+
+## Best Practices
+
+1. **Always use cleaners**: Don't pass raw text to the model
+2. **Consistent cleaning**: Use same cleaner for training and inference
+3. **Intersperse blanks**: Add blank tokens for better alignment
+4. **Batch efficiently**: Pad sequences properly for batched processing
+5. **Inspect outputs**: Verify phonemization is correct for your data
+
+## Language Support
+
+Currently supported:
+- **English**: Full support with G2P
+- **Other languages**: Via transliteration (experimental)
+
+For other languages, consider:
+- Training with language-specific phoneme sets
+- Using external G2P tools
+- Creating custom cleaners
+
+## Source Reference
+
+Implementation: `matcha/text/__init__.py:14`
+
+Cleaners: `matcha/text/cleaners.py`
+
+Symbols: `matcha/text/symbols.py`

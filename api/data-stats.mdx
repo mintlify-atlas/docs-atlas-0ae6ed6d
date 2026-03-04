@@ -1,0 +1,268 @@
+---
+title: Data Statistics
+description: Compute mel-spectrogram statistics for normalization
+---
+
+## Overview
+
+The data statistics utility computes mean and standard deviation values for mel-spectrograms in your dataset. These statistics are essential for proper normalization during training and inference.
+
+## Command Line Interface
+
+### matcha-data-stats
+
+```bash
+matcha-data-stats -i <config_file> [-b <batch_size>] [-f]
+```
+
+#### Arguments
+
+<ParamField path="-i, --input-config" type="str" required>
+  Name of the YAML configuration file under `configs/data/`
+  
+  **Example:** `ljspeech.yaml`, `vctk.yaml`
+</ParamField>
+
+<ParamField path="-b, --batch-size" type="int" default="256">
+  Batch size for processing. Higher values are faster but use more memory
+</ParamField>
+
+<ParamField path="-f, --force" type="flag">
+  Force overwrite existing statistics file
+</ParamField>
+
+## Python API
+
+### compute_data_statistics()
+
+Compute mean and standard deviation for mel-spectrograms.
+
+```python
+from matcha.utils.generate_data_statistics import compute_data_statistics
+
+stats = compute_data_statistics(
+    data_loader=train_loader,
+    out_channels=80
+)
+```
+
+#### Parameters
+
+<ParamField path="data_loader" type="torch.utils.data.DataLoader" required>
+  DataLoader containing mel-spectrograms in batch["y"]
+</ParamField>
+
+<ParamField path="out_channels" type="int" required>
+  Number of mel-spectrogram channels (typically 80)
+</ParamField>
+
+#### Returns
+
+<ResponseField name="mel_mean" type="float">
+  Mean value across all mel-spectrogram frames and channels
+</ResponseField>
+
+<ResponseField name="mel_std" type="float">
+  Standard deviation across all mel-spectrogram frames and channels
+</ResponseField>
+
+## Output Format
+
+The command generates a JSON file named `<config_name>.json`:
+
+```json
+{
+  "mel_mean": -5.534512,
+  "mel_std": 2.123456
+}
+```
+
+## Usage in Training
+
+The computed statistics are used in the model configuration:
+
+```yaml
+model:
+  _target_: matcha.models.matcha_tts.MatchaTTS
+  data_statistics:
+    mel_mean: -5.534512
+    mel_std: 2.123456
+  # ... other parameters
+```
+
+## Examples
+
+### Basic Usage
+
+```bash
+matcha-data-stats -i ljspeech.yaml
+```
+
+Output:
+```
+Dataloader loaded! Now computing stats...
+{'mel_mean': -5.534512, 'mel_std': 2.123456}
+```
+
+### High-Speed Processing
+
+```bash
+matcha-data-stats -i vctk.yaml -b 512
+```
+
+### Force Overwrite
+
+```bash
+matcha-data-stats -i ljspeech.yaml -f
+```
+
+## Python Script Example
+
+```python
+import torch
+import json
+from pathlib import Path
+from matcha.data.text_mel_datamodule import TextMelDataModule
+from matcha.utils.generate_data_statistics import compute_data_statistics
+
+# Setup datamodule
+datamodule = TextMelDataModule(
+    name="ljspeech",
+    train_filelist_path="data/ljspeech/train.txt",
+    valid_filelist_path="data/ljspeech/val.txt",
+    batch_size=256,
+    n_feats=80,
+    # ... other config
+)
+
+datamodule.setup()
+train_loader = datamodule.train_dataloader()
+
+# Compute statistics
+stats = compute_data_statistics(
+    data_loader=train_loader,
+    out_channels=80
+)
+
+print(f"Mean: {stats['mel_mean']:.6f}")
+print(f"Std: {stats['mel_std']:.6f}")
+
+# Save to file
+with open("ljspeech_stats.json", "w") as f:
+    json.dump(stats, f, indent=2)
+```
+
+## Mathematical Details
+
+The statistics are computed as:
+
+**Mean:**
+```python
+mean = sum(all_mel_values) / (total_frames * n_channels)
+```
+
+**Standard Deviation:**
+```python
+std = sqrt(
+    sum(mel_values^2) / (total_frames * n_channels) - mean^2
+)
+```
+
+## Configuration Requirements
+
+Your data config file must include:
+
+```yaml
+name: "dataset_name"
+train_filelist_path: "path/to/train.txt"
+valid_filelist_path: "path/to/val.txt"
+n_feats: 80
+batch_size: 256
+# ... other datamodule parameters
+```
+
+## Filelist Format
+
+The training filelist should contain:
+
+```
+audio_path|text|speaker_id
+LJ001-0001.wav|This is the text.|0
+LJ001-0002.wav|Another sentence.|0
+```
+
+## Performance Considerations
+
+### Memory Usage
+
+- **Batch size 256**: ~8 GB GPU memory
+- **Batch size 512**: ~16 GB GPU memory
+- **Batch size 128**: ~4 GB GPU memory
+
+### Processing Time
+
+For LJSpeech (~13,100 samples):
+- Batch size 256: ~2-3 minutes
+- Batch size 512: ~1-2 minutes
+- Batch size 128: ~4-5 minutes
+
+## Normalization in Model
+
+The model uses these statistics for normalization:
+
+```python
+# During training/inference
+def normalize(mel, mean, std):
+    return (mel - mean) / std
+
+def denormalize(mel, mean, std):
+    return mel * std + mean
+```
+
+## Error Handling
+
+### File Already Exists
+
+```bash
+$ matcha-data-stats -i ljspeech.yaml
+File already exists. Use -f to force overwrite
+```
+
+Solution: Add `-f` flag or delete existing file
+
+### Config Not Found
+
+```bash
+$ matcha-data-stats -i nonexistent.yaml
+Config file not found: configs/data/nonexistent.yaml
+```
+
+Solution: Check config file name and path
+
+### Invalid Batch Size
+
+```bash
+$ matcha-data-stats -i ljspeech.yaml -b 0
+Batch size must be greater than 0
+```
+
+Solution: Use positive integer for batch size
+
+## Best Practices
+
+1. **Use training set only**: Compute statistics on training data, not validation/test
+2. **Consistent preprocessing**: Ensure mel-spectrogram extraction matches training
+3. **Sufficient data**: Use full training set for accurate statistics
+4. **Save statistics**: Store in version control with model configs
+5. **Recompute when needed**: Recalculate if you change mel-spectrogram parameters
+
+## Related Commands
+
+- [matcha-tts](/api/cli#matcha-tts): Main synthesis command
+- [matcha-tts-get-durations](/api/get-durations): Extract phoneme durations
+
+## Source Reference
+
+Implementation: `matcha/utils/generate_data_statistics.py:25`
+
+Entry Point: `setup.py:45`

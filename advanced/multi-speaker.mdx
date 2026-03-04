@@ -1,0 +1,291 @@
+---
+title: 'Multi-Speaker Setup'
+description: 'Configure and use multi-speaker TTS models with Matcha-TTS'
+icon: 'users'
+---
+
+## Overview
+
+Matcha-TTS supports multi-speaker text-to-speech synthesis, allowing you to generate speech in different voices from a single model. The primary multi-speaker model is trained on the VCTK dataset with 108 speakers.
+
+## Available Multi-Speaker Models
+
+### VCTK Model
+
+The VCTK multi-speaker model supports 108 different speakers (IDs 0-107):
+
+```bash
+matcha-tts --model matcha_vctk --spk 5 --text "Hello, world!"
+```
+
+**Model Configuration (matcha/cli.py:30-32):**
+- Model name: `matcha_vctk`
+- Recommended vocoder: `hifigan_univ_v1`
+- Recommended speaking rate: `0.85`
+- Speaker range: `0-107` (108 total speakers)
+- Download URL: `https://github.com/shivammehta25/Matcha-TTS-checkpoints/releases/download/v1.0/matcha_vctk.ckpt`
+
+## Using Multi-Speaker Models
+
+### Basic Synthesis
+
+Synthesize with a specific speaker:
+
+```bash
+matcha-tts --model matcha_vctk --spk 10 --text "Your text here"
+```
+
+### Speaker Selection
+
+Choose from 108 available speakers (0-107):
+
+```bash
+# Speaker 0
+matcha-tts --model matcha_vctk --spk 0 --text "Hello from speaker zero"
+
+# Speaker 50
+matcha-tts --model matcha_vctk --spk 50 --text "Hello from speaker fifty"
+
+# Speaker 107 (last speaker)
+matcha-tts --model matcha_vctk --spk 107 --text "Hello from speaker one oh seven"
+```
+
+<Warning>
+Speaker ID must be between 0 and 107 for the VCTK model. Values outside this range will cause an error (matcha/cli.py:175-178).
+</Warning>
+
+### Default Speaker
+
+If no speaker ID is provided, speaker 0 is used by default:
+
+```bash
+matcha-tts --model matcha_vctk --text "Uses speaker 0"
+```
+
+A warning will be displayed (matcha/cli.py:181-183):
+```
+[!] Speaker ID not provided! Using speaker ID 0
+```
+
+## Multi-Speaker Configuration
+
+### Recommended Settings
+
+For the VCTK model, use these recommended parameters:
+
+```bash
+matcha-tts --model matcha_vctk \
+  --spk 10 \
+  --vocoder hifigan_univ_v1 \
+  --speaking_rate 0.85 \
+  --text "Your text here"
+```
+
+### Vocoder Selection
+
+<Note>
+Multi-speaker models should use the **universal HiFi-GAN vocoder** (`hifigan_univ_v1`) for best results across all speakers.
+</Note>
+
+The system automatically selects the correct vocoder if not specified:
+
+```bash
+# Vocoder automatically set to hifigan_univ_v1
+matcha-tts --model matcha_vctk --spk 10 --text "Hello"
+```
+
+## ONNX Export for Multi-Speaker Models
+
+Export a multi-speaker model to ONNX:
+
+```bash
+python3 -m matcha.onnx.export matcha_vctk.ckpt model.onnx --n-timesteps 5
+```
+
+The exporter automatically detects multi-speaker models (matcha/onnx/export.py:134) and includes the `spks` input in the ONNX graph.
+
+### ONNX Inference with Speaker ID
+
+```bash
+python3 -m matcha.onnx.infer model.onnx \
+  --text "Hello" \
+  --spk 25 \
+  --output-dir ./outputs
+```
+
+## Batched Multi-Speaker Synthesis
+
+Synthesize multiple utterances with the same speaker:
+
+```bash
+# Create a text file
+cat > sentences.txt << EOF
+First sentence to synthesize.
+Second sentence to synthesize.
+Third sentence to synthesize.
+EOF
+
+# Batch synthesis with speaker 42
+matcha-tts --model matcha_vctk \
+  --file sentences.txt \
+  --spk 42 \
+  --batched \
+  --batch_size 32
+```
+
+All sentences will be synthesized using the same speaker voice.
+
+## Speaker Parameters
+
+### Speaking Rate
+
+Adjust the speaking rate for multi-speaker models:
+
+```bash
+matcha-tts --model matcha_vctk \
+  --spk 10 \
+  --speaking_rate 0.85 \
+  --text "Adjust my speed"
+```
+
+- **< 1.0**: Faster speech
+- **0.85**: Recommended default for VCTK
+- **> 1.0**: Slower speech
+
+### Temperature
+
+Control synthesis variation:
+
+```bash
+matcha-tts --model matcha_vctk \
+  --spk 10 \
+  --temperature 0.667 \
+  --text "Control my variation"
+```
+
+- **Lower (0.3-0.5)**: More consistent output
+- **Default (0.667)**: Balanced naturalness
+- **Higher (0.8-1.0)**: More variation
+
+## Custom Multi-Speaker Models
+
+When using a custom multi-speaker model:
+
+```bash
+matcha-tts --checkpoint_path ./my_model.ckpt \
+  --vocoder hifigan_univ_v1 \
+  --spk 0 \
+  --text "Custom model synthesis"
+```
+
+<Warning>
+For custom multi-speaker models, use `--vocoder hifigan_univ_v1` for best compatibility across different speakers (matcha/cli.py:150-152).
+</Warning>
+
+## Output File Naming
+
+Multi-speaker synthesis includes the speaker ID in output filenames:
+
+**Single utterance:**
+```
+utterance_001_speaker_010.wav
+```
+
+**Batched synthesis:**
+```
+utterance_001_speaker_010.wav
+utterance_002_speaker_010.wav
+utterance_003_speaker_010.wav
+```
+
+## Implementation Details
+
+### Speaker Embedding
+
+Multi-speaker models use speaker embeddings internally:
+
+1. Speaker ID is converted to a tensor (matcha/cli.py:285)
+2. Passed to the model's `synthesise` method (matcha/cli.py:372-379)
+3. Conditioning the mel-spectrogram generation on speaker identity
+
+### Model Detection
+
+The system automatically detects multi-speaker models by checking:
+```python
+is_multi_speaker = matcha.n_spks > 1
+```
+
+This applies to both PyTorch and ONNX inference paths.
+
+## Speaker ID Validation
+
+The system validates speaker IDs (matcha/cli.py:174-184):
+
+1. Checks if speaker ID is within valid range
+2. Raises an error if out of bounds
+3. Warns if using default speaker ID
+
+```python
+assert (
+    args.spk >= spk_range[0] and args.spk <= spk_range[-1]
+), f"Speaker ID must be between {spk_range} for this model."
+```
+
+## VCTK Dataset Information
+
+The VCTK (Voice Cloning Toolkit) dataset contains:
+- 108 English speakers with various accents
+- Approximately 400 sentences per speaker
+- High-quality studio recordings
+- Diverse age ranges and accents
+
+## Tips for Best Results
+
+1. **Use the recommended vocoder**: `hifigan_univ_v1` works best across all speakers
+2. **Adjust speaking rate**: Start with 0.85 for VCTK, then adjust to preference
+3. **Test different speakers**: Each speaker has unique characteristics
+4. **Keep temperature moderate**: 0.667 provides good balance
+5. **Batch process**: Use batched mode for efficiency with multiple utterances
+
+## Troubleshooting
+
+### Speaker ID Out of Range
+
+**Error:**
+```
+Speaker ID must be between (0, 107) for this model.
+```
+
+**Solution:** Use a speaker ID between 0 and 107.
+
+### Wrong Vocoder Warning
+
+**Warning:**
+```
+[-] Using matcha_vctk model! I would suggest passing --vocoder hifigan_univ_v1
+```
+
+**Solution:** Specify the recommended vocoder:
+```bash
+matcha-tts --model matcha_vctk --vocoder hifigan_univ_v1 --spk 10 --text "Hello"
+```
+
+### Single-Speaker Model with Speaker ID
+
+**Warning:**
+```
+[-] Ignoring speaker id 10 for matcha_ljspeech
+```
+
+**Solution:** Don't specify `--spk` for single-speaker models like LJ Speech.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Pre-trained Models" icon="box" href="/advanced/pretrained-models">
+    Explore all available pre-trained models
+  </Card>
+  <Card title="ONNX Inference" icon="play" href="/advanced/onnx-inference">
+    Deploy multi-speaker models with ONNX
+  </Card>
+</CardGroup>

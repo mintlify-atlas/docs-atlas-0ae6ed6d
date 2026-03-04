@@ -1,0 +1,137 @@
+---
+title: 'ONNX Export'
+description: 'Export Matcha-TTS models to ONNX format for optimized deployment'
+icon: 'download'
+---
+
+## Overview
+
+Matcha-TTS supports exporting trained checkpoints to [ONNX](https://onnx.ai/) format, enabling deployment on various platforms and inference engines. The export process converts the PyTorch model to an optimized ONNX graph with configurable parameters.
+
+<Note>
+Special thanks to [@mush42](https://github.com/mush42) for implementing ONNX export and inference support.
+</Note>
+
+## Installation
+
+Before exporting to ONNX, install the required dependencies:
+
+```bash
+pip install onnx
+```
+
+<Warning>
+For ONNX export, PyTorch >= 2.1.0 is required since the `scaled_product_attention` operator is not exportable in older versions.
+</Warning>
+
+## Basic Export
+
+Export a Matcha-TTS checkpoint to ONNX format:
+
+```bash
+python3 -m matcha.onnx.export matcha.ckpt model.onnx --n-timesteps 5
+```
+
+### Command Arguments
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `checkpoint_path` | str | Yes | Path to the model checkpoint |
+| `output` | str | Yes | Path to output `.onnx` file |
+| `--n-timesteps` | int | No | Number of steps for reverse diffusion (default: 5) |
+| `--vocoder-name` | str | No | Name of vocoder to embed in ONNX graph |
+| `--vocoder-checkpoint-path` | str | No | Path to vocoder checkpoint |
+| `--opset` | int | No | ONNX opset version (default: 15) |
+
+## Export with Embedded Vocoder
+
+You can embed a vocoder in the exported ONNX graph to enable end-to-end waveform generation:
+
+```bash
+python3 -m matcha.onnx.export matcha.ckpt model.onnx \
+  --n-timesteps 5 \
+  --vocoder-name hifigan_T2_v1 \
+  --vocoder-checkpoint-path vocoder.ckpt
+```
+
+### Available Vocoders
+
+The following vocoders are supported for embedding (from matcha/cli.py:25-28):
+
+- `hifigan_T2_v1` - HiFi-GAN trained on LJ Speech
+- `hifigan_univ_v1` - Universal HiFi-GAN for multi-speaker models
+
+<Note>
+When embedding a vocoder, both `--vocoder-name` and `--vocoder-checkpoint-path` arguments are required.
+</Note>
+
+## Export Behavior
+
+### Model Inputs
+
+The exported ONNX model accepts the following inputs:
+
+- `x` - Phoneme sequence (int64, shape: [batch_size, time])
+- `x_lengths` - Length of each sequence (int64, shape: [batch_size])
+- `scales` - Temperature and length scale (float32, shape: [2])
+- `spks` - Speaker IDs for multi-speaker models (int64, shape: [batch_size])
+
+### Model Outputs
+
+**Without vocoder:**
+- `mel` - Mel-spectrogram (float32, shape: [batch_size, 80, time])
+- `mel_lengths` - Mel-spectrogram lengths (int64, shape: [batch_size])
+
+**With vocoder:**
+- `wav` - Waveform audio (float32, shape: [batch_size, time])
+- `wav_lengths` - Waveform lengths (int64, shape: [batch_size])
+
+## Dynamic Shapes
+
+The exported ONNX model supports dynamic batch sizes and sequence lengths, making it flexible for various deployment scenarios. Dynamic axes are configured for:
+
+- Batch dimension (axis 0) for all inputs and outputs
+- Time dimension for sequence inputs and generated outputs
+
+## Timesteps Configuration
+
+<Warning>
+The `n_timesteps` parameter is treated as a **hyper-parameter** during export, not as a model input. You must specify it during export, and it cannot be changed during inference.
+</Warning>
+
+The number of ODE solver steps affects quality and speed:
+
+- **Lower values (2-5)**: Faster inference, slightly lower quality
+- **Higher values (10-20)**: Better quality, slower inference
+- **Recommended**: 5 timesteps for most use cases
+
+## Multi-Speaker Model Export
+
+When exporting a multi-speaker model (matcha/onnx/export.py:134), the ONNX graph automatically includes the `spks` input:
+
+```bash
+python3 -m matcha.onnx.export matcha_vctk.ckpt model.onnx --n-timesteps 5
+```
+
+The exporter detects multi-speaker models by checking `matcha.n_spks > 1` and adds the appropriate input nodes.
+
+## Export Implementation Details
+
+The export process (matcha/onnx/export.py:35-60):
+
+1. Loads the Matcha-TTS checkpoint
+2. Optionally loads and combines with vocoder
+3. Creates dummy inputs for tracing
+4. Monkey-patches the forward function to accept scale parameters as tensors
+5. Exports to ONNX with dynamic axes and constant folding optimizations
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="ONNX Inference" icon="play" href="/advanced/onnx-inference">
+    Run inference on exported ONNX models
+  </Card>
+  <Card title="Multi-Speaker Setup" icon="users" href="/advanced/multi-speaker">
+    Configure multi-speaker TTS models
+  </Card>
+</CardGroup>

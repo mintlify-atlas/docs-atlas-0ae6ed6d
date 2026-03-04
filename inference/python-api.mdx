@@ -1,0 +1,417 @@
+---
+title: Python API
+description: Use Matcha-TTS programmatically in Python applications
+---
+
+## Overview
+
+The Matcha-TTS Python API provides fine-grained control over text-to-speech synthesis. Use it to integrate TTS into your Python applications, Jupyter notebooks, or custom workflows.
+
+## Installation
+
+First, ensure Matcha-TTS is installed:
+
+```bash
+pip install matcha-tts
+```
+
+## Basic Usage
+
+<CodeGroup>
+```python Simple Synthesis
+import torch
+from matcha.cli import load_matcha, load_vocoder, process_text, to_waveform
+from matcha.utils.utils import get_user_data_dir
+import soundfile as sf
+
+# Setup device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Load models
+model_path = get_user_data_dir() / "matcha_ljspeech.ckpt"
+vocoder_path = get_user_data_dir() / "hifigan_T2_v1"
+
+model = load_matcha("matcha_ljspeech", model_path, device)
+vocoder, denoiser = load_vocoder("hifigan_T2_v1", vocoder_path, device)
+
+# Synthesize
+text = "Hello, this is Matcha-TTS!"
+text_data = process_text(1, text, device)
+
+output = model.synthesise(
+    text_data["x"],
+    text_data["x_lengths"],
+    n_timesteps=10,
+    temperature=0.667,
+    spks=None,
+    length_scale=0.95
+)
+
+waveform = to_waveform(output["mel"], vocoder, denoiser)
+sf.write("output.wav", waveform, 22050, "PCM_24")
+```
+
+```python Multi-Speaker
+import torch
+from matcha.cli import load_matcha, load_vocoder, process_text, to_waveform
+from matcha.utils.utils import get_user_data_dir
+import soundfile as sf
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Load multi-speaker model
+model_path = get_user_data_dir() / "matcha_vctk.ckpt"
+vocoder_path = get_user_data_dir() / "hifigan_univ_v1"
+
+model = load_matcha("matcha_vctk", model_path, device)
+vocoder, denoiser = load_vocoder("hifigan_univ_v1", vocoder_path, device)
+
+# Synthesize with specific speaker
+text = "This is speaker 42 speaking."
+text_data = process_text(1, text, device)
+spk = torch.tensor([42], device=device, dtype=torch.long)
+
+output = model.synthesise(
+    text_data["x"],
+    text_data["x_lengths"],
+    n_timesteps=10,
+    temperature=0.667,
+    spks=spk,
+    length_scale=0.85
+)
+
+waveform = to_waveform(output["mel"], vocoder, denoiser)
+sf.write("speaker_42.wav", waveform, 22050, "PCM_24")
+```
+</CodeGroup>
+
+## Core API Functions
+
+### Model Loading
+
+#### load_matcha()
+
+Load a Matcha-TTS model from checkpoint.
+
+```python
+from matcha.cli import load_matcha
+
+model = load_matcha(
+    model_name="matcha_ljspeech",  # or "matcha_vctk"
+    checkpoint_path=model_path,
+    device=device
+)
+```
+
+**Parameters:**
+- `model_name` (str): Name of the model (for logging)
+- `checkpoint_path` (Path or str): Path to model checkpoint file
+- `device` (torch.device): Device to load model on
+
+**Returns:** MatchaTTS model instance
+
+#### load_vocoder()
+
+Load a vocoder for mel-to-waveform conversion.
+
+```python
+from matcha.cli import load_vocoder
+
+vocoder, denoiser = load_vocoder(
+    vocoder_name="hifigan_T2_v1",  # or "hifigan_univ_v1"
+    checkpoint_path=vocoder_path,
+    device=device
+)
+```
+
+**Parameters:**
+- `vocoder_name` (str): Vocoder type
+- `checkpoint_path` (Path or str): Path to vocoder checkpoint
+- `device` (torch.device): Device to load vocoder on
+
+**Returns:** Tuple of (vocoder, denoiser)
+
+### Text Processing
+
+#### process_text()
+
+Convert text to phoneme sequence.
+
+```python
+from matcha.cli import process_text
+
+text_data = process_text(
+    i=1,  # Utterance index (for logging)
+    text="Hello world",
+    device=device
+)
+
+# Returns dict with:
+# - "x_orig": Original text
+# - "x": Phoneme tensor [1, seq_len]
+# - "x_lengths": Length tensor [1]
+# - "x_phones": Phonetized text string
+```
+
+### Synthesis
+
+#### model.synthesise()
+
+Generate mel-spectrogram from text. This is the main synthesis method.
+
+```python
+output = model.synthesise(
+    x=text_tensor,           # [batch_size, max_text_length]
+    x_lengths=length_tensor, # [batch_size]
+    n_timesteps=10,
+    temperature=0.667,
+    spks=speaker_tensor,     # [batch_size] or None
+    length_scale=1.0
+)
+```
+
+**Parameters:**
+
+<ParamField path="x" type="torch.Tensor" required>
+  Batch of phoneme sequences. Shape: `[batch_size, max_text_length]`
+</ParamField>
+
+<ParamField path="x_lengths" type="torch.Tensor" required>
+  Lengths of texts in batch. Shape: `[batch_size]`
+</ParamField>
+
+<ParamField path="n_timesteps" type="int" required>
+  Number of ODE steps for reverse diffusion. More steps = higher quality.
+  
+  Typical values: 4, 10, 20, 50
+</ParamField>
+
+<ParamField path="temperature" type="float" default="1.0">
+  Controls variance of terminal distribution. Affects prosody variation.
+  
+  Range: 0.0 - 2.0, recommended: 0.667
+</ParamField>
+
+<ParamField path="spks" type="torch.Tensor" default="None">
+  Speaker IDs for multi-speaker models. Shape: `[batch_size]`
+  
+  Set to `None` for single-speaker models.
+</ParamField>
+
+<ParamField path="length_scale" type="float" default="1.0">
+  Controls speech pace. Higher = slower speech.
+  
+  Range: 0.5 - 1.5
+</ParamField>
+
+**Returns:** Dictionary containing:
+
+```python
+{
+    "encoder_outputs": torch.Tensor,  # [batch, n_feats, mel_len]
+    "decoder_outputs": torch.Tensor,  # [batch, n_feats, mel_len]
+    "attn": torch.Tensor,             # [batch, text_len, mel_len]
+    "mel": torch.Tensor,              # [batch, n_feats, mel_len]
+    "mel_lengths": torch.Tensor,      # [batch]
+    "rtf": float                      # Real-time factor
+}
+```
+
+#### to_waveform()
+
+Convert mel-spectrogram to waveform.
+
+```python
+from matcha.cli import to_waveform
+
+waveform = to_waveform(
+    mel=output["mel"],
+    vocoder=vocoder,
+    denoiser=denoiser,
+    denoiser_strength=0.00025
+)
+
+# Returns: torch.Tensor of shape [audio_samples]
+```
+
+## Advanced Examples
+
+### Batch Synthesis
+
+Process multiple texts efficiently:
+
+```python
+import torch
+from matcha.cli import load_matcha, load_vocoder, process_text, to_waveform
+import soundfile as sf
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Load models
+model = load_matcha("matcha_ljspeech", model_path, device)
+vocoder, denoiser = load_vocoder("hifigan_T2_v1", vocoder_path, device)
+
+texts = [
+    "First sentence to synthesize.",
+    "Second sentence to synthesize.",
+    "Third sentence to synthesize."
+]
+
+# Process all texts
+processed = [process_text(i, text, device) for i, text in enumerate(texts)]
+
+# Pad sequences for batching
+from torch.nn.utils.rnn import pad_sequence
+
+x_batch = pad_sequence(
+    [p["x"].squeeze(0) for p in processed],
+    batch_first=True
+)
+x_lengths = torch.tensor([p["x_lengths"].item() for p in processed], device=device)
+
+# Batch synthesis
+output = model.synthesise(
+    x_batch,
+    x_lengths,
+    n_timesteps=10,
+    temperature=0.667,
+    spks=None,
+    length_scale=0.95
+)
+
+# Extract individual waveforms
+for i in range(len(texts)):
+    mel_length = output["mel_lengths"][i]
+    mel = output["mel"][i][:, :mel_length]
+    waveform = to_waveform(mel.unsqueeze(0), vocoder, denoiser)
+    sf.write(f"output_{i}.wav", waveform, 22050, "PCM_24")
+```
+
+### Parameter Exploration
+
+Experiment with different synthesis parameters:
+
+```python
+import torch
+from matcha.cli import load_matcha, load_vocoder, process_text, to_waveform
+import soundfile as sf
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = load_matcha("matcha_ljspeech", model_path, device)
+vocoder, denoiser = load_vocoder("hifigan_T2_v1", vocoder_path, device)
+
+text = "Testing different synthesis parameters."
+text_data = process_text(1, text, device)
+
+# Try different step counts
+for steps in [2, 4, 10, 50]:
+    output = model.synthesise(
+        text_data["x"],
+        text_data["x_lengths"],
+        n_timesteps=steps,
+        temperature=0.667
+    )
+    waveform = to_waveform(output["mel"], vocoder, denoiser)
+    sf.write(f"steps_{steps}.wav", waveform, 22050, "PCM_24")
+    print(f"Steps {steps}: RTF = {output['rtf']:.4f}")
+
+# Try different temperatures
+for temp in [0.3, 0.667, 1.0, 1.5]:
+    output = model.synthesise(
+        text_data["x"],
+        text_data["x_lengths"],
+        n_timesteps=10,
+        temperature=temp
+    )
+    waveform = to_waveform(output["mel"], vocoder, denoiser)
+    sf.write(f"temp_{temp:.3f}.wav", waveform, 22050, "PCM_24")
+```
+
+### Speaker Interpolation
+
+Blend between speakers (requires model modification):
+
+```python
+import torch
+from matcha.cli import load_matcha, load_vocoder, process_text, to_waveform
+import soundfile as sf
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = load_matcha("matcha_vctk", model_path, device)
+vocoder, denoiser = load_vocoder("hifigan_univ_v1", vocoder_path, device)
+
+text = "Speaker interpolation example."
+text_data = process_text(1, text, device)
+
+# Get embeddings for two speakers
+spk1_emb = model.spk_emb(torch.tensor([0], device=device))
+spk2_emb = model.spk_emb(torch.tensor([16], device=device))
+
+# Interpolate (requires passing embeddings directly to encoder)
+for alpha in [0.0, 0.25, 0.5, 0.75, 1.0]:
+    mixed_emb = (1 - alpha) * spk1_emb + alpha * spk2_emb
+    # Note: You'll need to modify the model to accept embeddings directly
+    # This is a conceptual example
+```
+
+### Custom Model Integration
+
+```python
+import torch
+from matcha.models.matcha_tts import MatchaTTS
+from matcha.cli import load_vocoder, process_text, to_waveform
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Load your custom checkpoint
+model = MatchaTTS.load_from_checkpoint(
+    "path/to/your/checkpoint.ckpt",
+    map_location=device
+)
+model.eval()
+
+vocoder, denoiser = load_vocoder("hifigan_univ_v1", vocoder_path, device)
+
+# Use as normal
+text_data = process_text(1, "Custom model test.", device)
+output = model.synthesise(
+    text_data["x"],
+    text_data["x_lengths"],
+    n_timesteps=10,
+    temperature=0.667
+)
+waveform = to_waveform(output["mel"], vocoder, denoiser)
+```
+
+## Utility Functions
+
+### get_user_data_dir()
+
+Get the directory where models are stored:
+
+```python
+from matcha.utils.utils import get_user_data_dir
+
+data_dir = get_user_data_dir()  # Returns Path object
+model_path = data_dir / "matcha_ljspeech.ckpt"
+```
+
+### assert_model_downloaded()
+
+Ensure a model is downloaded:
+
+```python
+from matcha.cli import assert_model_downloaded, MATCHA_URLS
+from matcha.utils.utils import get_user_data_dir
+
+model_path = get_user_data_dir() / "matcha_ljspeech.ckpt"
+assert_model_downloaded(model_path, MATCHA_URLS["matcha_ljspeech"])
+```
+
+## API Reference
+
+For complete API documentation, see:
+
+- [CLI Usage](/inference/cli-usage) - Command-line interface
+- [Parameters](/inference/parameters) - Detailed parameter guide
+- Source code at `matcha/cli.py:208-419` and `matcha/models/matcha_tts.py:76-151`

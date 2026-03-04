@@ -1,97 +1,393 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: Matcha-TTS documentation
+mode: custom
 ---
 
-## Setting up
+<div className="relative overflow-hidden">
+  {/* Hero Section */}
+  <div className="relative py-20 overflow-hidden bg-gradient-to-br from-[#281d16] via-[#3d2d20] to-[#1a1410]">
+    {/* Background pattern overlay */}
+    <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMyI+PHBhdGggZD0iTTM2IDE2YzAtMy4zMTQgMi42ODYtNiA2LTZzNiAyLjY4NiA2IDYtMi42ODYgNi02IDYtNi0yLjY4Ni02LTZ6Ii8+PC9nPjwvZz48L3N2Zz4=')] opacity-30"></div>
+    
+    <div className="relative max-w-6xl mx-auto px-6 sm:px-8">
+      <div className="text-center">
+        {/* Badge */}
+        <div className="inline-flex items-center px-4 py-2 rounded-full bg-white/10 dark:bg-white/5 border border-white/20 dark:border-white/10 mb-8 backdrop-blur-sm">
+          <span className="text-sm font-medium text-white">ICASSP 2024</span>
+        </div>
+        
+        {/* Main Heading */}
+        <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-white mb-6 tracking-tight">
+          Fast neural TTS with<br />conditional flow matching
+        </h1>
+        
+        {/* Subtitle */}
+        <p className="text-lg sm:text-xl text-gray-300 dark:text-gray-200 max-w-3xl mx-auto mb-10 leading-relaxed">
+          Matcha-TTS is a probabilistic, non-autoregressive text-to-speech architecture that achieves natural-sounding synthesis with a compact memory footprint and real-time performance
+        </p>
+        
+        {/* CTA Buttons */}
+        <div className="flex flex-wrap justify-center gap-4">
+          <a
+            href="/quickstart"
+            className="inline-flex items-center px-8 py-3.5 rounded-lg bg-[#c89b6d] hover:bg-[#b88a5d] text-white font-semibold transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 no-underline"
+          >
+            Get started
+            <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+          </a>
+          <a
+            href="/introduction"
+            className="inline-flex items-center px-8 py-3.5 rounded-lg bg-white/10 hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10 border border-white/30 dark:border-white/20 text-white font-semibold transition-all duration-200 backdrop-blur-sm no-underline"
+          >
+            Read the docs
+          </a>
+          <a
+            href="https://shivammehta25.github.io/Matcha-TTS"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center px-8 py-3.5 rounded-lg bg-white/10 hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10 border border-white/30 dark:border-white/20 text-white font-semibold transition-all duration-200 backdrop-blur-sm no-underline"
+          >
+            Demo page
+            <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </a>
+        </div>
+        
+        {/* Stats */}
+        <div className="mt-16 grid grid-cols-2 sm:grid-cols-4 gap-6 sm:gap-8">
+          <div className="text-center">
+            <div className="text-3xl sm:text-4xl font-bold text-[#c89b6d] mb-2">1250+</div>
+            <div className="text-sm text-gray-300 dark:text-gray-200">GitHub Stars</div>
+          </div>
+          <div className="text-center">
+            <div className="text-3xl sm:text-4xl font-bold text-[#c89b6d] mb-2">10x</div>
+            <div className="text-sm text-gray-300 dark:text-gray-200">Faster than diffusion</div>
+          </div>
+          <div className="text-center">
+            <div className="text-3xl sm:text-4xl font-bold text-[#c89b6d] mb-2">RTF &lt; 1</div>
+            <div className="text-sm text-gray-300 dark:text-gray-200">Real-time synthesis</div>
+          </div>
+          <div className="text-center">
+            <div className="text-3xl sm:text-4xl font-bold text-[#c89b6d] mb-2">ONNX</div>
+            <div className="text-sm text-gray-300 dark:text-gray-200">Production ready</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-Get your documentation site up and running in minutes.
+  {/* Quick Start Section */}
+  <div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+    <div className="text-center mb-12">
+      <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+        Quick start
+      </h2>
+      <p className="text-base text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+        Get started with Matcha-TTS in three simple steps
+      </p>
+    </div>
+    
+    <Steps>
+      <Step title="Install Matcha-TTS">
+        Install the package using pip with Python 3.10 or higher:
+        
+        ```bash
+        pip install matcha-tts
+        ```
+        
+        Or install from source for the latest development version:
+        
+        ```bash
+        pip install git+https://github.com/shivammehta25/Matcha-TTS.git
+        ```
+      </Step>
+      
+      <Step title="Synthesize your first speech">
+        Use the CLI to generate speech from text. Pre-trained models will be downloaded automatically:
+        
+        ```bash
+        matcha-tts --text "Welcome to Matcha TTS, a fast text to speech system"
+        ```
+        
+        <Note>
+          This command downloads the pre-trained LJSpeech model (~100MB) and generates a waveform file in your current directory
+        </Note>
+      </Step>
+      
+      <Step title="Try the interactive interface">
+        Launch the Gradio web interface for interactive synthesis:
+        
+        ```bash
+        matcha-tts-app
+        ```
+        
+        The app lets you adjust synthesis parameters like speaking rate, temperature, and ODE solver steps in real-time
+      </Step>
+    </Steps>
+  </div>
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+  {/* Features Grid */}
+  <div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+    <div className="text-center mb-12">
+      <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+        Why Matcha-TTS?
+      </h2>
+      <p className="text-base text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+        Built for researchers and developers who need fast, high-quality neural TTS
+      </p>
+    </div>
+    
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="group relative p-6 rounded-2xl border border-gray-200 dark:border-[#27272a] bg-white dark:bg-[#1a1d27] hover:border-[#c89b6d] dark:hover:border-[#c89b6d] transition-all duration-200 hover:shadow-lg">
+        <div className="flex items-start">
+          <div className="flex-shrink-0">
+            <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-[#c89b6d]/10 text-[#c89b6d]">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+          </div>
+          <div className="ml-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Blazing fast synthesis
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Conditional flow matching enables 10x speedup over diffusion models while maintaining audio quality. Achieve real-time synthesis with RTF &lt; 1 on modern GPUs
+            </p>
+          </div>
+        </div>
+      </div>
+      
+      <div className="group relative p-6 rounded-2xl border border-gray-200 dark:border-[#27272a] bg-white dark:bg-[#1a1d27] hover:border-[#c89b6d] dark:hover:border-[#c89b6d] transition-all duration-200 hover:shadow-lg">
+        <div className="flex items-start">
+          <div className="flex-shrink-0">
+            <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-[#c89b6d]/10 text-[#c89b6d]">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+              </svg>
+            </div>
+          </div>
+          <div className="ml-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Natural, expressive speech
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Non-autoregressive architecture with probabilistic modeling produces highly natural speech. Control speaking rate and variance for expressive synthesis
+            </p>
+          </div>
+        </div>
+      </div>
+      
+      <div className="group relative p-6 rounded-2xl border border-gray-200 dark:border-[#27272a] bg-white dark:bg-[#1a1d27] hover:border-[#c89b6d] dark:hover:border-[#c89b6d] transition-all duration-200 hover:shadow-lg">
+        <div className="flex items-start">
+          <div className="flex-shrink-0">
+            <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-[#c89b6d]/10 text-[#c89b6d]">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+            </div>
+          </div>
+          <div className="ml-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Multi-speaker support
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Train on multi-speaker datasets like VCTK with speaker embeddings. Pre-trained multi-speaker models support 108 different voices out of the box
+            </p>
+          </div>
+        </div>
+      </div>
+      
+      <div className="group relative p-6 rounded-2xl border border-gray-200 dark:border-[#27272a] bg-white dark:bg-[#1a1d27] hover:border-[#c89b6d] dark:hover:border-[#c89b6d] transition-all duration-200 hover:shadow-lg">
+        <div className="flex items-start">
+          <div className="flex-shrink-0">
+            <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-[#c89b6d]/10 text-[#c89b6d]">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+              </svg>
+            </div>
+          </div>
+          <div className="ml-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Production-ready deployment
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Export models to ONNX for optimized inference across platforms. Embed vocoders in the graph for end-to-end waveform generation in production
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-## Make it yours
+  {/* Navigation Cards */}
+  <div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+    <div className="text-center mb-12">
+      <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+        Explore the documentation
+      </h2>
+      <p className="text-base text-gray-600 dark:text-gray-400">
+        Everything you need to build with Matcha-TTS
+      </p>
+    </div>
+    
+    <CardGroup cols={3}>
+      <Card
+        title="Core concepts"
+        icon="brain"
+        href="/concepts/architecture"
+      >
+        Learn about the architecture, flow matching, and how Matcha-TTS works under the hood
+      </Card>
+      <Card
+        title="Training guide"
+        icon="dumbbell"
+        href="/training/training-guide"
+      >
+        Train Matcha-TTS on your own dataset with custom voices and languages
+      </Card>
+      <Card
+        title="Inference API"
+        icon="code"
+        href="/inference/python-api"
+      >
+        Integrate Matcha-TTS into your Python applications for programmatic synthesis
+      </Card>
+      <Card
+        title="CLI reference"
+        icon="terminal"
+        href="/api/cli"
+      >
+        Complete command-line reference for synthesis, training, and utilities
+      </Card>
+      <Card
+        title="ONNX deployment"
+        icon="rocket"
+        href="/advanced/onnx-export"
+      >
+        Export and deploy models with ONNX for production workloads
+      </Card>
+      <Card
+        title="Model API"
+        icon="cube"
+        href="/api/matcha-tts"
+      >
+        Python API reference for the MatchaTTS model and components
+      </Card>
+    </CardGroup>
+  </div>
 
-Design a docs site that looks great and empowers your users.
+  {/* Resources Section */}
+  <div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+    <div className="text-center mb-12">
+      <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+        Resources
+      </h2>
+    </div>
+    
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <a
+        href="https://arxiv.org/abs/2309.03199"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group block p-6 rounded-2xl border border-gray-200 dark:border-[#27272a] bg-white dark:bg-[#1a1d27] hover:border-[#c89b6d] dark:hover:border-[#c89b6d] transition-all duration-200 no-underline"
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-[#c89b6d]/10 text-[#c89b6d]">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-[#c89b6d] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          </svg>
+        </div>
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">
+          Research paper
+        </h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Read the ICASSP 2024 paper on conditional flow matching for TTS
+        </p>
+      </a>
+      
+      <a
+        href="https://github.com/shivammehta25/Matcha-TTS"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group block p-6 rounded-2xl border border-gray-200 dark:border-[#27272a] bg-white dark:bg-[#1a1d27] hover:border-[#c89b6d] dark:hover:border-[#c89b6d] transition-all duration-200 no-underline"
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-[#c89b6d]/10 text-[#c89b6d]">
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+              <path fillRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-[#c89b6d] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          </svg>
+        </div>
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">
+          GitHub repository
+        </h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Explore the source code, report issues, and contribute
+        </p>
+      </a>
+      
+      <a
+        href="https://huggingface.co/spaces/shivammehta25/Matcha-TTS"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group block p-6 rounded-2xl border border-gray-200 dark:border-[#27272a] bg-white dark:bg-[#1a1d27] hover:border-[#c89b6d] dark:hover:border-[#c89b6d] transition-all duration-200 no-underline"
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-[#c89b6d]/10 text-[#c89b6d]">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-[#c89b6d] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          </svg>
+        </div>
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">
+          Try in browser
+        </h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Test Matcha-TTS directly in your browser on Hugging Face Spaces
+        </p>
+      </a>
+    </div>
+  </div>
 
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
-  </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
-  </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
-
-## Create beautiful pages
-
-Everything you need to create world-class documentation.
-
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
-
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+  {/* Closing CTA */}
+  <div className="mt-20 mb-16 max-w-5xl mx-auto px-6">
+    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#281d16] via-[#3d2d20] to-[#1a1410] p-12 text-center">
+      <div className="relative z-10">
+        <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
+          Ready to get started?
+        </h2>
+        <p className="text-lg text-gray-300 dark:text-gray-200 max-w-2xl mx-auto mb-8">
+          Install Matcha-TTS and synthesize your first speech in minutes
+        </p>
+        <a
+          href="/quickstart"
+          className="inline-flex items-center px-8 py-3.5 rounded-lg bg-[#c89b6d] hover:bg-[#b88a5d] text-white font-semibold transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 no-underline"
+        >
+          View quickstart guide
+          <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+          </svg>
+        </a>
+      </div>
+      
+      {/* Background decoration */}
+      <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-[#c89b6d] rounded-full opacity-10 blur-3xl"></div>
+      <div className="absolute bottom-0 left-0 -mb-8 -ml-8 w-64 h-64 bg-[#7e8975] rounded-full opacity-10 blur-3xl"></div>
+    </div>
+  </div>
+</div>

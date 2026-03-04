@@ -1,0 +1,362 @@
+---
+title: Duration Extraction
+description: Extract phoneme durations from trained Matcha-TTS models for improved training
+---
+
+Phoneme duration extraction allows you to pre-compute alignment information from a trained model, which can be used to train models faster with more stable alignment.
+
+## Overview
+
+Matcha-TTS learns to align text and audio automatically during training. Once you have a trained model, you can extract the learned phoneme durations and use them to:
+
+- Train new models faster with pre-computed alignments
+- Train duration-based models that require ground-truth durations
+- Analyze the alignment quality of your model
+- Bootstrap training on new architectures
+
+## When to Extract Durations
+
+Extract durations when you:
+
+- Have a well-trained base model (good audio quality)
+- Want to train additional models on the same dataset
+- Need stable alignments for small datasets
+- Are training other TTS architectures that require durations
+
+## Extraction Process
+
+<Steps>
+  <Step title="Train a base model">
+    First, train a Matcha-TTS model to convergence:
+
+    ```bash
+    python matcha/train.py experiment=ljspeech
+    ```
+
+    Wait until the model produces good quality audio (typically 200k+ steps for LJSpeech).
+  </Step>
+
+  <Step title="Extract durations">
+    Use the `get_durations_from_trained_model.py` script:
+
+    ```bash
+    python matcha/utils/get_durations_from_trained_model.py \
+      -i ljspeech.yaml \
+      -c /path/to/checkpoint.ckpt
+    ```
+
+    Or use the CLI command:
+
+    ```bash
+    matcha-tts-get-durations \
+      -i ljspeech.yaml \
+      -c matcha_ljspeech.ckpt
+    ```
+  </Step>
+
+  <Step title="Wait for processing">
+    The script processes all audio files in your train, validation, and test sets. This may take several minutes to hours depending on dataset size.
+
+    You'll see progress:
+    ```
+    Preprocessing: ljspeech from training filelist: data/LJSpeech-1.1/train.txt
+    Loading model...
+    Computing stats for training set if exists...
+    🍵 Computing durations 🍵: 100%|████████| 412/412 [05:23<00:00,  1.27it/s]
+    Computing stats for validation set if exists...
+    🍵 Computing durations 🍵: 100%|████████| 22/22 [00:17<00:00,  1.24it/s]
+    [+] Done! Data statistics saved to: data/durations
+    ```
+  </Step>
+</Steps>
+
+## Command Options
+
+### Basic Usage
+
+```bash
+matcha-tts-get-durations -i <config.yaml> -c <checkpoint.ckpt>
+```
+
+### All Options
+
+```bash
+matcha-tts-get-durations \
+  -i ljspeech.yaml \              # Dataset config file
+  -c model.ckpt \                 # Checkpoint path
+  -b 32 \                         # Batch size (default: 32)
+  -o /path/to/output \            # Custom output folder
+  -f \                            # Force overwrite existing
+  --cpu                           # Use CPU instead of GPU
+```
+
+### Parameters
+
+- `-i, --input-config`: Dataset YAML config name (from `configs/data/`)
+- `-c, --checkpoint_path`: Path to trained model checkpoint (required)
+- `-b, --batch-size`: Batch size for processing (default: 32, can be increased for faster processing)
+- `-o, --output-folder`: Custom output directory (default: `data/durations`)
+- `-f, --force`: Force overwrite if output folder exists
+- `--cpu`: Use CPU for inference (not recommended, much slower)
+
+## Output Format
+
+Durations are saved in two formats for each audio file:
+
+### NumPy Format (.npy)
+
+Binary format containing duration values:
+
+```python
+import numpy as np
+durations = np.load('data/durations/LJ001-0001.npy')
+# Array of integers: [3, 5, 4, 2, ...]  # Duration in frames for each phoneme
+```
+
+### JSON Format (.json)
+
+Human-readable format with phoneme-duration pairs:
+
+```json
+{
+  "phonemes": ["P", "R", "IH1", "N", "T", "IH0", "NG"],
+  "durations": [3, 5, 8, 4, 6, 7, 5],
+  "text": "Printing, in the only sense with which we are at present concerned."
+}
+```
+
+### Directory Structure
+
+Durations are saved alongside your dataset:
+
+```bash
+data/
+└── LJSpeech-1.1/
+    ├── train.txt
+    ├── val.txt
+    ├── wavs/
+    │   ├── LJ001-0001.wav
+    │   └── ...
+    └── durations/              # Created by extraction
+        ├── LJ001-0001.npy     # Binary duration data
+        ├── LJ001-0001.json    # Human-readable format
+        └── ...
+```
+
+## Training with Extracted Durations
+
+Once durations are extracted, train a new model using them:
+
+<Steps>
+  <Step title="Enable duration loading">
+    In your dataset config (`configs/data/ljspeech.yaml`):
+
+    ```yaml
+    load_durations: True
+    ```
+
+    Or create an experiment config:
+
+    ```yaml
+    # configs/experiment/ljspeech_from_durations.yaml
+    # @package _global_
+    
+    defaults:
+      - override /data: ljspeech.yaml
+    
+    tags: ["ljspeech", "durations"]
+    run_name: ljspeech_from_durations
+    
+    data:
+      load_durations: True
+      batch_size: 64  # Can use larger batch size
+    ```
+  </Step>
+
+  <Step title="Start training">
+    ```bash
+    python matcha/train.py experiment=ljspeech_from_durations
+    ```
+
+    Training with pre-computed durations:
+    - Converges faster (typically 50-100k steps vs 200k+ steps)
+    - More stable alignment learning
+    - Allows larger batch sizes (faster training)
+  </Step>
+</Steps>
+
+## Advanced Usage
+
+### Custom Output Location
+
+Save durations to a specific directory:
+
+```bash
+matcha-tts-get-durations \
+  -i ljspeech.yaml \
+  -c checkpoint.ckpt \
+  -o /path/to/custom/durations
+```
+
+Update your dataset config to load from this location:
+
+```python
+# The dataloader expects durations at:
+# <audio_parent_dir>/durations/<audio_filename>.npy
+```
+
+### Processing Large Datasets Faster
+
+Increase batch size for faster processing:
+
+```bash
+matcha-tts-get-durations \
+  -i ljspeech.yaml \
+  -c checkpoint.ckpt \
+  -b 64  # Larger batch size
+```
+
+<Warning>
+  Large batch sizes require more GPU memory. Reduce if you encounter out-of-memory errors.
+</Warning>
+
+### Multi-Speaker Datasets
+
+The extraction process works identically for multi-speaker models:
+
+```bash
+matcha-tts-get-durations \
+  -i vctk.yaml \
+  -c multispeaker_checkpoint.ckpt \
+  -b 32
+```
+
+## Duration File Expectations
+
+When loading durations during training, the dataloader:
+
+1. Looks for durations in `<dataset_root>/durations/`
+2. Expects filename: `<audio_basename>.npy`
+3. Validates duration length matches phoneme sequence length
+
+### Validation
+
+The dataloader performs automatic validation:
+
+```python
+# matcha/data/text_mel_datamodule.py:195
+assert len(durs) == len(text), \
+  f"Length of durations {len(durs)} and text {len(text)} do not match"
+```
+
+If you see this error:
+- Durations were extracted with different text processing
+- Checkpoint and config mismatch
+- Corrupted duration files
+
+## Use Cases
+
+### Fast-Track Training
+
+```bash
+# 1. Train initial model (slow, learns alignment)
+python matcha/train.py experiment=ljspeech
+# Wait for convergence...
+
+# 2. Extract durations
+matcha-tts-get-durations -i ljspeech.yaml -c logs/.../checkpoint.ckpt
+
+# 3. Train new models faster (pre-computed alignment)
+python matcha/train.py experiment=ljspeech_from_durations
+```
+
+### Duration Analysis
+
+Analyze extracted durations for quality control:
+
+```python
+import numpy as np
+import json
+
+# Load durations
+with open('data/durations/LJ001-0001.json', 'r') as f:
+    dur_data = json.load(f)
+
+print(f"Phonemes: {dur_data['phonemes']}")
+print(f"Durations: {dur_data['durations']}")
+print(f"Total frames: {sum(dur_data['durations'])}")
+
+# Check for anomalies
+durs = np.array(dur_data['durations'])
+print(f"Mean duration: {durs.mean():.2f} frames")
+print(f"Max duration: {durs.max()} frames")
+print(f"Min duration: {durs.min()} frames")
+```
+
+### Cross-Architecture Training
+
+Use Matcha-TTS durations to train other architectures:
+
+```python
+# Load Matcha-extracted durations for your custom TTS model
+import numpy as np
+
+durs = np.load('data/durations/audio.npy')
+# Use in your model's training pipeline
+```
+
+## Troubleshooting
+
+### Missing Duration Files
+
+Error:
+```
+FileNotFoundError: Tried loading the durations but durations didn't exist at data/durations/LJ001-0001.npy
+```
+
+Solution:
+- Ensure durations were extracted for all files
+- Check output path is correct
+- Verify extraction completed without errors
+
+### Length Mismatch
+
+Error:
+```
+AssertionError: Length of durations 45 and text 47 do not match
+```
+
+Solution:
+- Re-extract durations with matching config
+- Ensure checkpoint and config are from same training run
+- Check text cleaning settings match
+
+### Out of Memory During Extraction
+
+Error:
+```
+RuntimeError: CUDA out of memory
+```
+
+Solution:
+```bash
+# Reduce batch size
+matcha-tts-get-durations -i ljspeech.yaml -c checkpoint.ckpt -b 8
+
+# Or use CPU (slower)
+matcha-tts-get-durations -i ljspeech.yaml -c checkpoint.ckpt --cpu
+```
+
+## Best Practices
+
+- Extract durations from your best-performing checkpoint
+- Validate duration quality before using for training
+- Keep duration files in version control for reproducibility
+- Document which checkpoint was used for extraction
+- Verify duration lengths match your audio files
+
+## Next Steps
+
+- [Train with extracted durations](/training/training-guide#training-with-pre-computed-durations)
+- [Configure duration-based training](/training/configuration)
+- [Optimize training performance](/training/training-guide#troubleshooting)

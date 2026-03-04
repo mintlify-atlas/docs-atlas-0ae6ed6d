@@ -1,0 +1,328 @@
+---
+title: Command Line Interface
+description: CLI commands for synthesis and utilities
+---
+
+## Overview
+
+Matcha-TTS provides several command-line tools for text-to-speech synthesis, data preprocessing, and model utilities. All commands are available after installing the package.
+
+## Installation
+
+```bash
+pip install matcha-tts
+```
+
+## Commands
+
+### matcha-tts
+
+Main command for text-to-speech synthesis.
+
+```bash
+matcha-tts [OPTIONS]
+```
+
+#### Options
+
+<ParamField path="--model" type="str" default="matcha_ljspeech">
+  Model to use for synthesis
+  
+  **Choices:** `matcha_ljspeech`, `matcha_vctk`
+</ParamField>
+
+<ParamField path="--checkpoint_path" type="str" default="None">
+  Path to a custom model checkpoint (overrides --model)
+</ParamField>
+
+<ParamField path="--vocoder" type="str" default="None">
+  Vocoder to use (defaults to the recommended vocoder for the model)
+  
+  **Choices:** `hifigan_T2_v1`, `hifigan_univ_v1`
+</ParamField>
+
+<ParamField path="--text" type="str" default="None">
+  Text to synthesize (single utterance)
+</ParamField>
+
+<ParamField path="--file" type="str" default="None">
+  Path to text file with utterances (one per line)
+</ParamField>
+
+<ParamField path="--spk" type="int" default="None">
+  Speaker ID for multi-speaker models (0-107 for matcha_vctk)
+</ParamField>
+
+<ParamField path="--temperature" type="float" default="0.667">
+  Variance of the noise. Higher = more diverse output. Range: 0.0-2.0
+</ParamField>
+
+<ParamField path="--speaking_rate" type="float" default="None">
+  Speaking rate control. Higher = slower speech. Default: 1.0 for custom models, 0.95 for ljspeech, 0.85 for vctk
+</ParamField>
+
+<ParamField path="--steps" type="int" default="10">
+  Number of ODE solver steps. More steps = better quality but slower. Typical range: 4-20
+</ParamField>
+
+<ParamField path="--cpu" type="flag">
+  Force CPU inference (default: use GPU if available)
+</ParamField>
+
+<ParamField path="--denoiser_strength" type="float" default="0.00025">
+  Strength of the vocoder bias denoiser
+</ParamField>
+
+<ParamField path="--output_folder" type="str" default=".">
+  Output folder to save synthesized audio and mel-spectrograms
+</ParamField>
+
+<ParamField path="--batched" type="flag">
+  Enable batched inference for processing multiple utterances
+</ParamField>
+
+<ParamField path="--batch_size" type="int" default="32">
+  Batch size for batched inference
+</ParamField>
+
+#### Examples
+
+**Single speaker synthesis:**
+
+```bash
+matcha-tts --text "Hello, this is a test of Matcha TTS." \
+  --model matcha_ljspeech \
+  --steps 10 \
+  --output_folder ./outputs
+```
+
+**Multi-speaker synthesis:**
+
+```bash
+matcha-tts --text "Hello, how are you today?" \
+  --model matcha_vctk \
+  --spk 5 \
+  --temperature 0.667 \
+  --steps 10
+```
+
+**Batch synthesis from file:**
+
+```bash
+matcha-tts --file utterances.txt \
+  --model matcha_ljspeech \
+  --batched \
+  --batch_size 16 \
+  --output_folder ./batch_outputs
+```
+
+**Custom model with specific settings:**
+
+```bash
+matcha-tts --checkpoint_path ./my_model.ckpt \
+  --text "Testing custom model." \
+  --vocoder hifigan_univ_v1 \
+  --speaking_rate 0.9 \
+  --temperature 0.5 \
+  --steps 15
+```
+
+**CPU inference:**
+
+```bash
+matcha-tts --text "Running on CPU." \
+  --model matcha_ljspeech \
+  --cpu
+```
+
+### matcha-data-stats
+
+Compute mel-spectrogram statistics for dataset normalization.
+
+```bash
+matcha-data-stats [OPTIONS]
+```
+
+#### Options
+
+<ParamField path="-i, --input-config" type="str" default="vctk.yaml">
+  Name of the YAML config file under configs/data/
+</ParamField>
+
+<ParamField path="-b, --batch-size" type="int" default="256">
+  Batch size for computation (higher = faster)
+</ParamField>
+
+<ParamField path="-f, --force" type="flag">
+  Force overwrite existing output file
+</ParamField>
+
+#### Output
+
+Creates a JSON file with mel-spectrogram statistics:
+
+```json
+{
+  "mel_mean": -5.5345,
+  "mel_std": 2.1234
+}
+```
+
+#### Example
+
+```bash
+matcha-data-stats -i ljspeech.yaml -b 512
+```
+
+### matcha-tts-get-durations
+
+Extract phoneme durations from a trained model using Monotonic Alignment Search.
+
+```bash
+matcha-tts-get-durations [OPTIONS]
+```
+
+#### Options
+
+<ParamField path="-i, --input-config" type="str" default="ljspeech.yaml">
+  Name of the YAML config file under configs/data/
+</ParamField>
+
+<ParamField path="-c, --checkpoint_path" type="str" required>
+  Path to the trained model checkpoint
+</ParamField>
+
+<ParamField path="-b, --batch-size" type="int" default="32">
+  Batch size for processing
+</ParamField>
+
+<ParamField path="-o, --output-folder" type="str" default="None">
+  Output folder for durations (defaults to data_path/durations/)
+</ParamField>
+
+<ParamField path="-f, --force" type="flag">
+  Force overwrite existing duration files
+</ParamField>
+
+<ParamField path="--cpu" type="flag">
+  Use CPU instead of GPU (not recommended)
+</ParamField>
+
+#### Output
+
+For each audio file, generates:
+- `filename.npy`: NumPy array of phoneme durations
+- `filename.json`: JSON with phoneme-duration pairs
+
+#### Example
+
+```bash
+matcha-tts-get-durations \
+  -i ljspeech.yaml \
+  -c checkpoints/best_model.ckpt \
+  -o ./durations \
+  -b 64
+```
+
+### matcha-tts-app
+
+Launch interactive Gradio web interface for synthesis.
+
+```bash
+matcha-tts-app
+```
+
+This command starts a web interface where you can:
+- Select pre-trained models
+- Choose speakers (for multi-speaker models)
+- Adjust synthesis parameters
+- Type or paste text
+- Generate and play audio
+
+#### Example
+
+```bash
+matcha-tts-app
+# Opens web interface at http://localhost:7860
+```
+
+## Output Files
+
+### Audio Files
+
+Generated as `utterance_XXX_speaker_YYY.wav` (or `utterance_XXX.wav` for single-speaker):
+- Format: WAV
+- Sample rate: 22050 Hz
+- Bit depth: 24-bit PCM
+
+### Mel-Spectrogram Files
+
+Saved alongside audio as:
+- `utterance_XXX.npy`: NumPy array of mel-spectrogram
+- `utterance_XXX.png`: Visualization of mel-spectrogram
+
+## Environment Variables
+
+Matcha-TTS uses the following directories:
+
+- **Model cache**: `~/.local/share/matcha_tts/` (Linux/Mac) or `%LOCALAPPDATA%\matcha_tts\` (Windows)
+- Downloaded models are cached here automatically
+
+## Performance Tips
+
+### Speed Optimization
+
+1. **Reduce ODE steps**: Use `--steps 4` for faster synthesis (slight quality loss)
+2. **Enable batched inference**: Use `--batched` for multiple utterances
+3. **GPU acceleration**: Ensure CUDA is available (much faster than CPU)
+
+### Quality Optimization
+
+1. **Increase ODE steps**: Use `--steps 15-20` for better quality
+2. **Adjust temperature**: Lower values (0.3-0.5) for more consistent output
+3. **Fine-tune speaking rate**: Adjust `--speaking_rate` for natural pacing
+
+## Pretrained Models
+
+### matcha_ljspeech
+
+- **Dataset**: LJ Speech (single female speaker)
+- **Recommended vocoder**: `hifigan_T2_v1`
+- **Default speaking rate**: 0.95
+- **Language**: English
+
+### matcha_vctk
+
+- **Dataset**: VCTK (108 speakers)
+- **Recommended vocoder**: `hifigan_univ_v1`
+- **Default speaking rate**: 0.85
+- **Speaker IDs**: 0-107
+- **Language**: English (various accents)
+
+## Error Handling
+
+### Common Issues
+
+**"Either text or file must be provided"**
+```bash
+# Must specify --text OR --file
+matcha-tts --text "Hello world"
+```
+
+**"Sampling temperature cannot be negative"**
+```bash
+# Temperature must be >= 0
+matcha-tts --text "Test" --temperature 0.667
+```
+
+**"Speaker ID must be between 0 and 107"**
+```bash
+# For matcha_vctk, use valid speaker ID
+matcha-tts --model matcha_vctk --spk 5 --text "Test"
+```
+
+## Source Reference
+
+CLI Implementation: `matcha/cli.py:208`
+
+Entry Points: `setup.py:44`

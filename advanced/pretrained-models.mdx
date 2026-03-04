@@ -1,0 +1,357 @@
+---
+title: 'Pre-trained Models'
+description: 'Download and use pre-trained Matcha-TTS models and vocoders'
+icon: 'box'
+---
+
+## Overview
+
+Matcha-TTS provides pre-trained models for both single-speaker and multi-speaker text-to-speech synthesis. Models are automatically downloaded when using the CLI or can be manually downloaded from the release page.
+
+<Note>
+Pre-trained models are automatically downloaded to your user data directory when first used with the CLI or Gradio interface.
+</Note>
+
+## Available Models
+
+### Single-Speaker Models
+
+#### LJ Speech Model
+
+Trained on the LJ Speech dataset (single female speaker):
+
+**Model Details:**
+- **Name:** `matcha_ljspeech`
+- **Download URL:** `https://github.com/shivammehta25/Matcha-TTS-checkpoints/releases/download/v1.0/matcha_ljspeech.ckpt`
+- **Recommended Vocoder:** `hifigan_T2_v1`
+- **Recommended Speaking Rate:** `0.95`
+- **Dataset:** LJ Speech (single speaker, ~24 hours)
+
+**Usage:**
+```bash
+matcha-tts --model matcha_ljspeech --text "Hello, world!"
+```
+
+### Multi-Speaker Models
+
+#### VCTK Model
+
+Trained on the VCTK dataset (108 speakers):
+
+**Model Details:**
+- **Name:** `matcha_vctk`
+- **Download URL:** `https://github.com/shivammehta25/Matcha-TTS-checkpoints/releases/download/v1.0/matcha_vctk.ckpt`
+- **Recommended Vocoder:** `hifigan_univ_v1`
+- **Recommended Speaking Rate:** `0.85`
+- **Speaker Range:** `0-107` (108 total speakers)
+- **Dataset:** VCTK (108 speakers, various accents)
+
+**Usage:**
+```bash
+matcha-tts --model matcha_vctk --spk 10 --text "Hello from speaker ten!"
+```
+
+## Vocoder Models
+
+Matcha-TTS uses HiFi-GAN vocoders to convert mel-spectrograms to waveforms:
+
+### HiFi-GAN T2 v1
+
+**Optimized for LJ Speech:**
+- **Name:** `hifigan_T2_v1`
+- **Download URL:** `https://github.com/shivammehta25/Matcha-TTS-checkpoints/releases/download/v1.0/generator_v1`
+- **Use Case:** Single-speaker LJ Speech model
+- **Description:** Trained specifically on LJ Speech for optimal quality
+
+### HiFi-GAN Universal v1
+
+**Universal multi-speaker vocoder:**
+- **Name:** `hifigan_univ_v1`
+- **Download URL:** `https://github.com/shivammehta25/Matcha-TTS-checkpoints/releases/download/v1.0/g_02500000`
+- **Use Case:** Multi-speaker models and general purpose
+- **Description:** Works across different speakers and datasets
+
+## Model Configuration Reference
+
+From matcha/cli.py:20-34:
+
+```python
+MATCHA_URLS = {
+    "matcha_ljspeech": "https://github.com/shivammehta25/Matcha-TTS-checkpoints/releases/download/v1.0/matcha_ljspeech.ckpt",
+    "matcha_vctk": "https://github.com/shivammehta25/Matcha-TTS-checkpoints/releases/download/v1.0/matcha_vctk.ckpt",
+}
+
+VOCODER_URLS = {
+    "hifigan_T2_v1": "https://github.com/shivammehta25/Matcha-TTS-checkpoints/releases/download/v1.0/generator_v1",
+    "hifigan_univ_v1": "https://github.com/shivammehta25/Matcha-TTS-checkpoints/releases/download/v1.0/g_02500000",
+}
+
+MULTISPEAKER_MODEL = {
+    "matcha_vctk": {"vocoder": "hifigan_univ_v1", "speaking_rate": 0.85, "spk": 0, "spk_range": (0, 107)}
+}
+
+SINGLESPEAKER_MODEL = {"matcha_ljspeech": {"vocoder": "hifigan_T2_v1", "speaking_rate": 0.95, "spk": None}}
+```
+
+## Using Pre-trained Models
+
+### Automatic Download
+
+The easiest way is to let the CLI automatically download models:
+
+```bash
+# First run downloads the model
+matcha-tts --model matcha_ljspeech --text "This will download the model automatically"
+```
+
+Models are cached in the user data directory (typically `~/.local/share/matcha-tts/` on Linux).
+
+### Manual Download
+
+You can manually download models from the [releases page](https://github.com/shivammehta25/Matcha-TTS-checkpoints/releases/tag/v1.0):
+
+```bash
+# Download LJ Speech model
+wget https://github.com/shivammehta25/Matcha-TTS-checkpoints/releases/download/v1.0/matcha_ljspeech.ckpt
+
+# Download VCTK model
+wget https://github.com/shivammehta25/Matcha-TTS-checkpoints/releases/download/v1.0/matcha_vctk.ckpt
+
+# Download HiFi-GAN vocoders
+wget https://github.com/shivammehta25/Matcha-TTS-checkpoints/releases/download/v1.0/generator_v1
+wget https://github.com/shivammehta25/Matcha-TTS-checkpoints/releases/download/v1.0/g_02500000
+```
+
+### Using Custom Checkpoints
+
+Load a specific checkpoint file:
+
+```bash
+matcha-tts --checkpoint_path ./matcha_ljspeech.ckpt \
+  --vocoder hifigan_T2_v1 \
+  --text "Using a custom checkpoint"
+```
+
+## Model Recommendations
+
+### For Single Voice
+
+**Use LJ Speech model:**
+```bash
+matcha-tts --model matcha_ljspeech \
+  --speaking_rate 0.95 \
+  --text "High quality single voice"
+```
+
+### For Multiple Voices
+
+**Use VCTK model:**
+```bash
+matcha-tts --model matcha_vctk \
+  --spk 42 \
+  --speaking_rate 0.85 \
+  --text "Multiple speaker options"
+```
+
+### For Custom Datasets
+
+**Train your own model:**
+```bash
+python matcha/train.py experiment=ljspeech
+```
+
+Then use with:
+```bash
+matcha-tts --checkpoint_path ./custom_model.ckpt \
+  --vocoder hifigan_univ_v1 \
+  --text "Custom trained model"
+```
+
+## Model Performance
+
+### LJ Speech Model
+
+- **Quality:** High quality, natural-sounding female voice
+- **Speed:** RTF (Real-Time Factor) typically < 0.1 on GPU
+- **Use Cases:** Audiobooks, assistants, narration
+- **Recommended Steps:** 10 for best quality, 5 for faster synthesis
+
+### VCTK Model
+
+- **Quality:** Natural voices across 108 speakers
+- **Speed:** RTF typically < 0.15 on GPU
+- **Use Cases:** Multi-voice applications, character voices, diverse accents
+- **Recommended Steps:** 10 for best quality, 5 for faster synthesis
+
+## Synthesis Parameters
+
+### Temperature
+
+Controls synthesis variation (default: 0.667):
+
+```bash
+matcha-tts --model matcha_ljspeech \
+  --temperature 0.667 \
+  --text "Default temperature"
+```
+
+### Speaking Rate
+
+Model-specific recommendations:
+
+```bash
+# LJ Speech - slightly faster
+matcha-tts --model matcha_ljspeech --speaking_rate 0.95 --text "Optimized rate"
+
+# VCTK - slightly slower for clarity
+matcha-tts --model matcha_vctk --spk 10 --speaking_rate 0.85 --text "Optimized rate"
+```
+
+### ODE Steps
+
+Number of diffusion steps (default: 10):
+
+```bash
+# Fast synthesis (lower quality)
+matcha-tts --model matcha_ljspeech --steps 5 --text "Fast mode"
+
+# High quality (slower)
+matcha-tts --model matcha_ljspeech --steps 20 --text "High quality mode"
+```
+
+## ONNX Export of Pre-trained Models
+
+### Export LJ Speech Model
+
+```bash
+python3 -m matcha.onnx.export matcha_ljspeech.ckpt ljspeech.onnx \
+  --n-timesteps 5 \
+  --vocoder-name hifigan_T2_v1 \
+  --vocoder-checkpoint-path generator_v1
+```
+
+### Export VCTK Model
+
+```bash
+python3 -m matcha.onnx.export matcha_vctk.ckpt vctk.onnx \
+  --n-timesteps 5 \
+  --vocoder-name hifigan_univ_v1 \
+  --vocoder-checkpoint-path g_02500000
+```
+
+## Model Storage Locations
+
+Pre-trained models are stored in the user data directory:
+
+**Linux:**
+```
+~/.local/share/matcha-tts/
+```
+
+**macOS:**
+```
+~/Library/Application Support/matcha-tts/
+```
+
+**Windows:**
+```
+%APPDATA%\matcha-tts\
+```
+
+## Gradio Interface
+
+Use pre-trained models with the web interface:
+
+```bash
+matcha-tts-app
+```
+
+The Gradio app automatically:
+- Downloads required models
+- Provides speaker selection for VCTK
+- Allows parameter adjustment
+- Enables audio playback and download
+
+## HuggingFace Demo
+
+Try pre-trained models in your browser:
+
+[Matcha-TTS on HuggingFace Spaces](https://huggingface.co/spaces/shivammehta25/Matcha-TTS)
+
+No installation required!
+
+## Model Validation
+
+The CLI automatically validates models (matcha/cli.py:71-81):
+
+1. Checks if model exists locally
+2. Downloads if missing
+3. Verifies checkpoint integrity
+4. Selects appropriate vocoder
+5. Validates speaker IDs for multi-speaker models
+
+## Troubleshooting
+
+### Download Fails
+
+**Issue:** Model download times out or fails
+
+**Solutions:**
+1. Check internet connection
+2. Try manual download from GitHub releases
+3. Place downloaded files in the user data directory
+
+### Wrong Vocoder
+
+**Warning:**
+```
+[-] Using matcha_vctk model! I would suggest passing --vocoder hifigan_univ_v1
+```
+
+**Solution:**
+```bash
+matcha-tts --model matcha_vctk --vocoder hifigan_univ_v1 --spk 10 --text "Hello"
+```
+
+### Model Not Found
+
+**Error:** Model checkpoint not found
+
+**Solution:**
+```bash
+# Use automatic download
+matcha-tts --model matcha_ljspeech --text "Auto download"
+
+# Or specify path explicitly
+matcha-tts --checkpoint_path /path/to/model.ckpt --text "Explicit path"
+```
+
+## Citation
+
+If you use these pre-trained models, please cite the Matcha-TTS paper:
+
+```bibtex
+@inproceedings{mehta2024matcha,
+  title={Matcha-{TTS}: A fast {TTS} architecture with conditional flow matching},
+  author={Mehta, Shivam and Tu, Ruibo and Beskow, Jonas and Sz{\'e}kely, {\'E}va and Henter, Gustav Eje},
+  booktitle={Proc. ICASSP},
+  year={2024}
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Multi-Speaker Setup" icon="users" href="/advanced/multi-speaker">
+    Learn to use the VCTK multi-speaker model
+  </Card>
+  <Card title="ONNX Export" icon="download" href="/advanced/onnx-export">
+    Export pre-trained models to ONNX format
+  </Card>
+  <Card title="Training" icon="graduation-cap" href="/training/custom-dataset">
+    Train your own custom models
+  </Card>
+  <Card title="ONNX Inference" icon="play" href="/advanced/onnx-inference">
+    Deploy models with ONNX Runtime
+  </Card>
+</CardGroup>

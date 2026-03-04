@@ -1,0 +1,312 @@
+---
+title: 'Conditional Flow Matching'
+description: 'Understanding the flow matching algorithm used in Matcha-TTS for mel-spectrogram generation'
+---
+
+# Conditional Flow Matching
+
+Conditional Flow Matching (CFM) is the core generative algorithm in Matcha-TTS. Unlike diffusion models, CFM learns to transform noise into data by solving an Ordinary Differential Equation (ODE) along a probability flow.
+
+## What is Flow Matching?
+
+Flow matching learns a **vector field** that describes how to continuously transform a simple distribution (Gaussian noise) into a complex data distribution (mel-spectrograms). During inference, we follow this vector field to generate new samples.
+
+```
+Noise z ~ N(0, I)  ──[ODE Solver]──>  Mel-Spectrogram x₁
+        t=0                                   t=1
+```
+
+<Info>
+**Key Advantage**: Flow matching typically requires fewer sampling steps than diffusion models (10-50 steps vs 100-1000 steps), making it significantly faster while maintaining high quality.
+</Info>
+
+## Implementation
+
+The CFM implementation is in `flow_matching.py` with two main classes:
+
+### BASECFM Class
+
+The base class (`flow_matching.py:12`) implements the core flow matching algorithm:
+
+```python
+class BASECFM(torch.nn.Module, ABC):
+    def __init__(
+        self,
+        n_feats,        # Number of mel features (80)
+        cfm_params,     # CFM configuration
+        n_spks=1,       # Number of speakers
+        spk_emb_dim=128,
+    ):
+        super().__init__()
+        self.solver = cfm_params.solver
+        self.sigma_min = cfm_params.sigma_min  # Minimum noise level (default: 1e-4)
+```
+
+**Key Parameters:**
+- `sigma_min`: Minimum noise level to prevent numerical instability (default: `1e-4`)
+- `solver`: ODE solver type (currently uses Euler method)
+
+### CFM Class
+
+The concrete implementation (`flow_matching.py:121`) combines CFM with a neural estimator:
+
+```python
+class CFM(BASECFM):
+    def __init__(self, in_channels, out_channel, cfm_params, decoder_params, n_spks=1, spk_emb_dim=64):
+        super().__init__(
+            n_feats=in_channels,
+            cfm_params=cfm_params,
+            n_spks=n_spks,
+            spk_emb_dim=spk_emb_dim,
+        )
+        
+        in_channels = in_channels + (spk_emb_dim if n_spks > 1 else 0)
+        # The neural network that estimates the vector field
+        self.estimator = Decoder(in_channels=in_channels, out_channels=out_channel, **decoder_params)
+```
+
+<Note>
+The `in_channels` includes both the concatenated encoder output (`mu_y`) and the current sample, hence `2 * n_feats`. For multi-speaker models, speaker embeddings are also added.
+</Note>
+
+## The Flow Matching Equation
+
+Flow matching constructs a time-dependent interpolation between noise and data:
+
+### Conditional Flow Path
+
+The path from noise `z` to data `x₁` at time `t ∈ [0, 1]` is defined in `flow_matching.py:112`:
+
+```python
+y = (1 - (1 - sigma_min) * t) * z + t * x1
+```
+
+Where:
+- `z ~ N(0, I)`: Gaussian noise
+- `x₁`: Target mel-spectrogram
+- `t ∈ [0, 1]`: Time parameter
+- `sigma_min`: Minimum noise level (prevents collapse to deterministic)
+
+This creates a linear interpolation:
+- At `t=0`: `y = z` (pure noise)
+- At `t=1`: `y = sigma_min * z + x₁` (mostly data, tiny bit of noise)
+
+### Conditional Vector Field
+
+The target vector field (velocity) that the network learns to predict (`flow_matching.py:113`):
+
+```python
+u = x1 - (1 - sigma_min) * z
+```
+
+This is the time derivative `dy/dt`, representing the direction and magnitude of change at each point.
+
+## Training Loss
+
+The training objective is implemented in `compute_loss` (`flow_matching.py:87`):
+
+```python
+def compute_loss(self, x1, mask, mu, spks=None, cond=None):
+    b, _, t = mu.shape
+    
+    # Sample random timestep for each batch element
+    t = torch.rand([b, 1, 1], device=mu.device, dtype=mu.dtype)
+    
+    # Sample noise p(x_0)
+    z = torch.randn_like(x1)
+    
+    # Compute interpolated state
+    y = (1 - (1 - self.sigma_min) * t) * z + t * x1
+    
+    # Compute target vector field
+    u = x1 - (1 - self.sigma_min) * z
+    
+    # Train estimator to predict u
+    loss = F.mse_loss(
+        self.estimator(y, mask, mu, t.squeeze(), spks), 
+        u, 
+        reduction="sum"
+    ) / (torch.sum(mask) * u.shape[1])
+    
+    return loss, y
+```
+
+**Training Process:**
+1. Sample random time `t ~ Uniform(0, 1)` for each batch element
+2. Sample Gaussian noise `z ~ N(0, I)`
+3. Create interpolated state `y` at time `t`
+4. Compute target vector field `u`
+5. Train network to predict `u` given `y`, `t`, and condition `mu`
+
+<Info>
+The loss is normalized by the number of unmasked elements (`torch.sum(mask)`) and feature dimension (`u.shape[1]`) to ensure consistent gradients across different sequence lengths.
+</Info>
+
+## Inference: ODE Solving
+
+During inference, we solve the ODE to generate mel-spectrograms (`flow_matching.py:33-53`):
+
+```python
+@torch.inference_mode()
+def forward(self, mu, mask, n_timesteps, temperature=1.0, spks=None, cond=None):
+    # Start from Gaussian noise
+    z = torch.randn_like(mu) * temperature
+    
+    # Create timestep schedule from 0 to 1
+    t_span = torch.linspace(0, 1, n_timesteps + 1, device=mu.device)
+    
+    # Solve ODE
+    return self.solve_euler(z, t_span=t_span, mu=mu, mask=mask, spks=spks, cond=cond)
+```
+
+**Parameters:**
+- `mu`: Encoder output (condition)
+- `n_timesteps`: Number of ODE solver steps (typically 10-50)
+- `temperature`: Scales initial noise variance
+  - `temperature > 1.0`: More diverse/random outputs
+  - `temperature < 1.0`: More deterministic outputs
+  - `temperature = 1.0`: Standard sampling
+
+### Euler ODE Solver
+
+The ODE is solved using the Euler method (`flow_matching.py:55`):
+
+```python
+def solve_euler(self, x, t_span, mu, mask, spks, cond):
+    t, _, dt = t_span[0], t_span[-1], t_span[1] - t_span[0]
+    
+    sol = []
+    
+    for step in range(1, len(t_span)):
+        # Predict velocity at current state
+        dphi_dt = self.estimator(x, mask, mu, t, spks, cond)
+        
+        # Euler step: x_next = x + dt * velocity
+        x = x + dt * dphi_dt
+        t = t + dt
+        sol.append(x)
+        
+        # Update step size for next iteration
+        if step < len(t_span) - 1:
+            dt = t_span[step + 1] - t
+    
+    return sol[-1]
+```
+
+**Algorithm:**
+1. Start with noise: `x₀ = z`
+2. For each timestep:
+   - Predict velocity: `v = estimator(x, t, conditions)`
+   - Update state: `x ← x + dt * v`
+   - Advance time: `t ← t + dt`
+3. Return final state `x₁`
+
+<Note>
+**Why Euler Method?** While more sophisticated ODE solvers exist (Runge-Kutta, adaptive step size), the Euler method is:
+- Simple and fast
+- Sufficient for flow matching (unlike diffusion which needs more careful solvers)
+- Easily parallelizable
+- Deterministic given the same initial noise
+</Note>
+
+## Conditioning on Text
+
+The flow matching is **conditional** on the text encoder output `mu`. This guides the generation process:
+
+```python
+dphi_dt = self.estimator(x, mask, mu, t, spks, cond)
+#                              ↑
+#                        Encoder output
+```
+
+The estimator (decoder) takes:
+- `x`: Current state in the flow
+- `mu`: Encoder output (text condition)
+- `t`: Current time
+- `mask`: Sequence mask
+- `spks`: Speaker embeddings (multi-speaker)
+
+Internally, `x` and `mu` are concatenated (see `decoder.py:384`):
+```python
+x = pack([x, mu], "b * t")[0]  # Concatenate along channel dimension
+```
+
+## Comparison with Diffusion Models
+
+| Aspect | Conditional Flow Matching | Diffusion Models |
+|--------|---------------------------|------------------|
+| **Process** | ODE (deterministic path) | SDE (stochastic path) |
+| **Steps** | 10-50 | 100-1000 |
+| **Training** | Regress vector field | Denoise at various noise levels |
+| **Sampling** | ODE solver | Iterative denoising |
+| **Speed** | Faster | Slower |
+| **Theory** | Optimal transport / Flow matching | Score matching / Diffusion |
+
+<Info>
+**Key Insight**: Flow matching learns a **direct path** from noise to data, while diffusion learns to reverse a gradual noising process. This makes flow matching more efficient.
+</Info>
+
+## Sigma Min Parameter
+
+The `sigma_min` parameter (`flow_matching.py:25-28`) prevents the flow from becoming completely deterministic:
+
+```python
+if hasattr(cfm_params, "sigma_min"):
+    self.sigma_min = cfm_params.sigma_min
+else:
+    self.sigma_min = 1e-4
+```
+
+At `t=1`, the state becomes:
+```python
+y = sigma_min * z + x1  # Small residual noise
+```
+
+This:
+- Prevents numerical instability
+- Maintains slight stochasticity
+- Helps with generalization
+
+## Visualization
+
+```
+Time:     t=0           t=0.25         t=0.5          t=0.75         t=1
+State:    z (noise) ───────────────────────────────────────────> x₁ (data)
+          
+          ███████      ▓▓▓▓▓▓▓       ▒▒▒▒▒▒▒       ░░░░░░░       mel-spec
+          ███████      ▓▓▓▓▓▓▓       ▒▒▒▒▒▒▒       ░░░░░░░       │││││││
+          ███████      ▓▓▓▓▓▓▓       ▒▒▒▒▒▒▒       ░░░░░░░       │││││││
+          
+Velocity: ────────> ────────> ────────> ────────> 
+          (predicted by estimator network at each step)
+```
+
+The network learns to predict the velocity (direction to move) at any point along this path.
+
+## Practical Considerations
+
+### Number of Timesteps
+
+- **Training**: Single random timestep per batch element
+- **Inference**: User-specified (`n_timesteps`)
+  - Fewer steps (10-20): Faster, slightly lower quality
+  - More steps (30-50): Slower, higher quality
+  - Diminishing returns beyond 50 steps
+
+### Temperature Scaling
+
+Controls diversity vs quality tradeoff:
+
+```python
+z = torch.randn_like(mu) * temperature
+```
+
+- `temperature = 0.667`: More focused, deterministic
+- `temperature = 1.0`: Standard (recommended)
+- `temperature = 1.5`: More diverse, creative
+
+## Related Components
+
+- [Decoder](/concepts/decoder) - The neural estimator architecture
+- [Architecture](/concepts/architecture) - How CFM fits into the overall model
+- [Text Encoder](/concepts/text-encoder) - Provides conditioning signal `mu`

@@ -1,0 +1,504 @@
+---
+title: 'Decoder'
+description: 'U-Net based decoder architecture that estimates the vector field for flow matching'
+---
+
+# Decoder
+
+The decoder in Matcha-TTS is a U-Net style neural network that serves as the **vector field estimator** for the Conditional Flow Matching (CFM) algorithm. It learns to predict the velocity (direction and magnitude) for transforming noise into mel-spectrograms.
+
+## Architecture Overview
+
+The decoder is a 1D U-Net with:
+- **Down-sampling path**: Processes features at multiple resolutions
+- **Bottleneck (mid blocks)**: Deepest processing layer
+- **Up-sampling path**: Reconstructs high-resolution output
+- **Skip connections**: Preserves information from down-sampling path
+
+```
+Input: [x, mu, spks] concatenated
+         ↓
+    [Time Embed]
+         ↓
+   ┌─[Down Block 1]─┐
+   │      ↓         │
+   │ [Down Block 2]─┤
+   │      ↓         │
+   │ [Down Block N]─┤
+   │      ↓         │
+   │  [Mid Blocks]  │
+   │      ↓         │
+   ├─[Up Block N]←──┘
+   │      ↓
+   ├─[Up Block 2]←──┘
+   │      ↓
+   └─[Up Block 1]←──┘
+         ↓
+    [Final Conv]
+         ↓
+   Output: velocity u
+```
+
+## Decoder Class
+
+Defined in `decoder.py:200`:
+
+```python
+class Decoder(nn.Module):
+    def __init__(
+        self,
+        in_channels,           # Input channels (x + mu + spks concatenated)
+        out_channels,          # Output channels (mel features, typically 80)
+        channels=(256, 256),   # Channel dimensions for each U-Net level
+        dropout=0.05,
+        attention_head_dim=64,
+        n_blocks=1,            # Number of transformer blocks per level
+        num_mid_blocks=2,      # Number of middle blocks
+        num_heads=4,           # Attention heads
+        act_fn="snake",        # Activation function for transformer
+        down_block_type="transformer",
+        mid_block_type="transformer",
+        up_block_type="transformer",
+    )
+```
+
+**Key Parameters:**
+- `in_channels`: Input dimension (see [Input Composition](#input-composition))
+- `out_channels`: Number of mel features (typically 80)
+- `channels`: Tuple of hidden dimensions at each U-Net level, e.g., `(256, 256)`
+- `n_blocks`: Number of transformer/conformer blocks per level
+- `num_mid_blocks`: Depth of bottleneck
+
+## Input Composition
+
+The decoder receives multiple inputs concatenated along the channel dimension (`decoder.py:384-388`):
+
+```python
+def forward(self, x, mask, mu, t, spks=None, cond=None):
+    # x: current state in flow, shape (B, n_feats, T)
+    # mu: encoder output, shape (B, n_feats, T)
+    # spks: speaker embeddings, shape (B, spk_emb_dim)
+    
+    # Concatenate x and mu
+    x = pack([x, mu], "b * t")[0]  # (B, 2*n_feats, T)
+    
+    # Add speaker embeddings if available
+    if spks is not None:
+        spks = repeat(spks, "b c -> b c t", t=x.shape[-1])
+        x = pack([x, spks], "b * t")[0]  # (B, 2*n_feats + spk_emb_dim, T)
+```
+
+**Resulting channel dimensions:**
+- Without speakers: `in_channels = 2 * n_feats` (typically 160)
+- With speakers: `in_channels = 2 * n_feats + spk_emb_dim` (e.g., 160 + 64 = 224)
+
+<Note>
+The concatenation of `x` (current state) and `mu` (encoder output/condition) allows the network to simultaneously know:
+1. Where it currently is in the flow (`x`)
+2. Where it should be going (`mu` guides towards target)
+</Note>
+
+## Time Embeddings
+
+The timestep `t` is embedded using sinusoidal position embeddings (`decoder.py:14-29`):
+
+```python
+class SinusoidalPosEmb(torch.nn.Module):
+    def __init__(self, dim):
+        self.dim = dim
+    
+    def forward(self, x, scale=1000):
+        half_dim = self.dim // 2
+        emb = math.log(10000) / (half_dim - 1)
+        emb = torch.exp(torch.arange(half_dim, device=device).float() * -emb)
+        emb = scale * x.unsqueeze(1) * emb.unsqueeze(0)
+        emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
+        return emb
+```
+
+Then processed through an MLP (`decoder.py:221-227`):
+
+```python
+self.time_embeddings = SinusoidalPosEmb(in_channels)
+time_embed_dim = channels[0] * 4  # e.g., 256 * 4 = 1024
+self.time_mlp = TimestepEmbedding(
+    in_channels=in_channels,
+    time_embed_dim=time_embed_dim,
+    act_fn="silu",
+)
+```
+
+During forward pass (`decoder.py:381-382`):
+```python
+t = self.time_embeddings(t)  # Sinusoidal encoding
+t = self.time_mlp(t)         # MLP: in_channels -> time_embed_dim
+```
+
+This produces a time embedding of dimension `channels[0] * 4` (e.g., 1024) that is injected into each residual block.
+
+## Building Blocks
+
+### ResNet Block
+
+The fundamental building block (`decoder.py:46`):
+
+```python
+class ResnetBlock1D(torch.nn.Module):
+    def __init__(self, dim, dim_out, time_emb_dim, groups=8):
+        self.mlp = torch.nn.Sequential(
+            nn.Mish(), 
+            torch.nn.Linear(time_emb_dim, dim_out)
+        )
+        self.block1 = Block1D(dim, dim_out, groups=groups)
+        self.block2 = Block1D(dim_out, dim_out, groups=groups)
+        self.res_conv = torch.nn.Conv1d(dim, dim_out, 1)
+    
+    def forward(self, x, mask, time_emb):
+        h = self.block1(x, mask)
+        h += self.mlp(time_emb).unsqueeze(-1)  # Add time conditioning
+        h = self.block2(h, mask)
+        output = h + self.res_conv(x * mask)   # Residual connection
+        return output
+```
+
+**Block1D** (`decoder.py:32`):
+```python
+class Block1D(torch.nn.Module):
+    def __init__(self, dim, dim_out, groups=8):
+        self.block = torch.nn.Sequential(
+            torch.nn.Conv1d(dim, dim_out, 3, padding=1),
+            torch.nn.GroupNorm(groups, dim_out),
+            nn.Mish(),
+        )
+```
+
+Structure: `Conv1D → GroupNorm → Mish`
+
+### Transformer/Conformer Blocks
+
+Each level can use either Transformer or Conformer blocks (`decoder.py:318`):
+
+```python
+@staticmethod
+def get_block(block_type, dim, attention_head_dim, num_heads, dropout, act_fn):
+    if block_type == "conformer":
+        block = ConformerWrapper(
+            dim=dim,
+            dim_head=attention_head_dim,
+            heads=num_heads,
+            ff_mult=1,
+            conv_expansion_factor=2,
+            ff_dropout=dropout,
+            attn_dropout=dropout,
+            conv_dropout=dropout,
+            conv_kernel_size=31,
+        )
+    elif block_type == "transformer":
+        block = BasicTransformerBlock(
+            dim=dim,
+            num_attention_heads=num_heads,
+            attention_head_dim=attention_head_dim,
+            dropout=dropout,
+            activation_fn=act_fn,
+        )
+```
+
+**Conformer** combines:
+- Multi-head self-attention
+- Depthwise separable convolutions
+- Feed-forward networks
+- Macaron-style architecture
+
+**Transformer** uses:
+- Standard multi-head self-attention
+- Feed-forward network
+- Layer normalization
+
+<Info>
+**Transformer vs Conformer**: Conformer blocks add convolutional layers to capture local patterns, making them particularly effective for sequential audio data. Transformers are simpler and faster. The default configuration uses transformers.
+</Info>
+
+## Down-Sampling Path
+
+Builds the encoder side of the U-Net (`decoder.py:234-256`):
+
+```python
+for i in range(len(channels)):
+    input_channel = output_channel
+    output_channel = channels[i]
+    is_last = i == len(channels) - 1
+    
+    # ResNet block for feature extraction
+    resnet = ResnetBlock1D(
+        dim=input_channel, 
+        dim_out=output_channel, 
+        time_emb_dim=time_embed_dim
+    )
+    
+    # Transformer/Conformer blocks for attention
+    transformer_blocks = nn.ModuleList([
+        self.get_block(down_block_type, output_channel, attention_head_dim, 
+                       num_heads, dropout, act_fn)
+        for _ in range(n_blocks)
+    ])
+    
+    # Down-sample or keep resolution
+    downsample = (
+        Downsample1D(output_channel) if not is_last 
+        else nn.Conv1d(output_channel, output_channel, 3, padding=1)
+    )
+    
+    self.down_blocks.append(nn.ModuleList([resnet, transformer_blocks, downsample]))
+```
+
+**Downsample1D** (`decoder.py:64`):
+```python
+class Downsample1D(nn.Module):
+    def __init__(self, dim):
+        self.conv = torch.nn.Conv1d(dim, dim, 3, 2, 1)  # Stride 2 -> 2x downsampling
+```
+
+Forward pass through down blocks (`decoder.py:392-407`):
+```python
+hiddens = []
+masks = [mask]
+
+for resnet, transformer_blocks, downsample in self.down_blocks:
+    mask_down = masks[-1]
+    
+    # ResNet block
+    x = resnet(x, mask_down, t)
+    
+    # Transformer blocks
+    x = rearrange(x, "b c t -> b t c")  # (B, C, T) -> (B, T, C)
+    mask_down = rearrange(mask_down, "b 1 t -> b t")
+    
+    for transformer_block in transformer_blocks:
+        x = transformer_block(hidden_states=x, attention_mask=mask_down, timestep=t)
+    
+    x = rearrange(x, "b t c -> b c t")  # Back to (B, C, T)
+    mask_down = rearrange(mask_down, "b t -> b 1 t")
+    
+    hiddens.append(x)  # Save for skip connections
+    x = downsample(x * mask_down)
+    masks.append(mask_down[:, :, ::2])  # Adjust mask for downsampling
+```
+
+## Middle Blocks
+
+Bottleneck layers with highest receptive field (`decoder.py:258-278`):
+
+```python
+for i in range(num_mid_blocks):
+    resnet = ResnetBlock1D(
+        dim=channels[-1], 
+        dim_out=channels[-1], 
+        time_emb_dim=time_embed_dim
+    )
+    
+    transformer_blocks = nn.ModuleList([
+        self.get_block(mid_block_type, channels[-1], attention_head_dim, 
+                       num_heads, dropout, act_fn)
+        for _ in range(n_blocks)
+    ])
+    
+    self.mid_blocks.append(nn.ModuleList([resnet, transformer_blocks]))
+```
+
+Processing (`decoder.py:412-423`):
+```python
+for resnet, transformer_blocks in self.mid_blocks:
+    x = resnet(x, mask_mid, t)
+    
+    x = rearrange(x, "b c t -> b t c")
+    mask_mid = rearrange(mask_mid, "b 1 t -> b t")
+    
+    for transformer_block in transformer_blocks:
+        x = transformer_block(hidden_states=x, attention_mask=mask_mid, timestep=t)
+    
+    x = rearrange(x, "b t c -> b c t")
+    mask_mid = rearrange(mask_mid, "b t -> b 1 t")
+```
+
+## Up-Sampling Path
+
+Reconstructs the output with skip connections (`decoder.py:280-310`):
+
+```python
+channels = channels[::-1] + (channels[0],)  # Reverse + add final channel
+
+for i in range(len(channels) - 1):
+    input_channel = channels[i]
+    output_channel = channels[i + 1]
+    is_last = i == len(channels) - 2
+    
+    # ResNet accepts concatenated skip connection (2x channels)
+    resnet = ResnetBlock1D(
+        dim=2 * input_channel,  # Skip connection doubles channels
+        dim_out=output_channel,
+        time_emb_dim=time_embed_dim,
+    )
+    
+    transformer_blocks = nn.ModuleList([
+        self.get_block(up_block_type, output_channel, attention_head_dim, 
+                       num_heads, dropout, act_fn)
+        for _ in range(n_blocks)
+    ])
+    
+    upsample = (
+        Upsample1D(output_channel, use_conv_transpose=True)
+        if not is_last
+        else nn.Conv1d(output_channel, output_channel, 3, padding=1)
+    )
+    
+    self.up_blocks.append(nn.ModuleList([resnet, transformer_blocks, upsample]))
+```
+
+**Upsample1D** (`decoder.py:120`):
+```python
+class Upsample1D(nn.Module):
+    def __init__(self, channels, use_conv_transpose=True, ...):
+        if use_conv_transpose:
+            self.conv = nn.ConvTranspose1d(channels, channels, 4, 2, 1)  # 2x upsampling
+```
+
+Forward pass (`decoder.py:425-438`):
+```python
+for resnet, transformer_blocks, upsample in self.up_blocks:
+    mask_up = masks.pop()
+    
+    # Concatenate skip connection from down path
+    x = resnet(pack([x, hiddens.pop()], "b * t")[0], mask_up, t)
+    
+    # Transformer blocks
+    x = rearrange(x, "b c t -> b t c")
+    mask_up = rearrange(mask_up, "b 1 t -> b t")
+    
+    for transformer_block in transformer_blocks:
+        x = transformer_block(hidden_states=x, attention_mask=mask_up, timestep=t)
+    
+    x = rearrange(x, "b t c -> b c t")
+    mask_up = rearrange(mask_up, "b t -> b 1 t")
+    
+    x = upsample(x * mask_up)
+```
+
+<Note>
+**Skip Connections**: The up-sampling path concatenates features from the corresponding down-sampling layer, doubling the channel count. This helps preserve fine-grained details lost during downsampling.
+</Note>
+
+## Final Projection
+
+Maps to output channels (`decoder.py:312-313`, `decoder.py:440-441`):
+
+```python
+self.final_block = Block1D(channels[-1], channels[-1])
+self.final_proj = nn.Conv1d(channels[-1], self.out_channels, 1)
+
+# Forward
+x = self.final_block(x, mask_up)
+output = self.final_proj(x * mask_up)
+return output * mask
+```
+
+Output shape: `(B, out_channels, T)` where `out_channels = n_feats` (typically 80)
+
+## Weight Initialization
+
+Kaiming initialization for stability (`decoder.py:345-361`):
+
+```python
+def initialize_weights(self):
+    for m in self.modules():
+        if isinstance(m, nn.Conv1d):
+            nn.init.kaiming_normal_(m.weight, nonlinearity="relu")
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        
+        elif isinstance(m, nn.GroupNorm):
+            nn.init.constant_(m.weight, 1)
+            nn.init.constant_(m.bias, 0)
+        
+        elif isinstance(m, nn.Linear):
+            nn.init.kaiming_normal_(m.weight, nonlinearity="relu")
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+```
+
+## Masking
+
+All operations respect sequence masks to handle variable-length inputs:
+
+```python
+x = resnet(x, mask, t)          # Mask applied inside ResNet blocks
+x = transformer_block(x, mask)   # Mask applied to attention
+output = self.final_proj(x * mask_up)  # Final masking
+return output * mask            # Ensure output is masked
+```
+
+Masks are adjusted when downsampling:
+```python
+masks.append(mask_down[:, :, ::2])  # Every other frame
+```
+
+## Typical Configuration
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `in_channels` | 160-224 | Depends on speakers (2×n_feats + spk_emb) |
+| `out_channels` | 80 | Mel-spectrogram features |
+| `channels` | `(256, 256)` | Two U-Net levels with 256 channels |
+| `dropout` | 0.05 | Dropout probability |
+| `n_blocks` | 1 | One transformer block per level |
+| `num_mid_blocks` | 2 | Two bottleneck blocks |
+| `num_heads` | 4 | Attention heads |
+| `attention_head_dim` | 64 | Dimension per attention head |
+| `block_type` | "transformer" | Type of attention block |
+
+## Memory and Computation
+
+With `channels=(256, 256)` and input length `T`:
+
+**Down-sampling:**
+- Level 0: `T` frames, 256 channels
+- Level 1: `T/2` frames, 256 channels
+
+**Bottleneck:**
+- `T/2` frames, 256 channels
+
+**Up-sampling:**
+- Level 1: `T/2` frames, 256 channels (+ skip from down)
+- Level 0: `T` frames, 256 channels (+ skip from down)
+
+<Info>
+The U-Net architecture with skip connections provides a good balance between:
+- **Global context** (via downsampling and attention)
+- **Local details** (via skip connections)
+- **Computational efficiency** (smaller feature maps at deeper levels)
+</Info>
+
+## Design Choices
+
+### Why U-Net?
+
+1. **Multi-scale processing**: Captures both global structure and local details
+2. **Skip connections**: Preserves information through the network
+3. **Proven effectiveness**: Works well for dense prediction tasks (image/audio generation)
+
+### Why Transformer Blocks?
+
+1. **Long-range dependencies**: Attention captures relationships across the sequence
+2. **Flexible receptive field**: Not limited by convolution kernel size
+3. **Complementary to ResNet**: ResNet handles local patterns, transformers handle global
+
+### Why Time Conditioning?
+
+1. **Flow matching requirement**: Network needs to know where in the flow (t ∈ [0,1])
+2. **Different behaviors**: Network learns different transformations at different times
+3. **Similar to diffusion**: Time-dependent denoising process
+
+## Related Components
+
+- [Flow Matching](/concepts/flow-matching) - How the decoder is used in CFM
+- [Architecture](/concepts/architecture) - Overall model structure
+- [Text Encoder](/concepts/text-encoder) - Provides conditioning signal `mu`

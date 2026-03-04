@@ -1,0 +1,475 @@
+---
+title: Configuration
+description: Detailed guide to Matcha-TTS training configuration with Hydra
+---
+
+Matcha-TTS uses [Hydra](https://hydra.cc/) for configuration management, providing a flexible and composable configuration system.
+
+## Configuration Structure
+
+The configuration is organized into modular components:
+
+```bash
+configs/
+├── train.yaml              # Main training config
+├── data/                   # Dataset configurations
+│   ├── ljspeech.yaml
+│   ├── vctk.yaml
+│   └── your_dataset.yaml
+├── model/                  # Model architecture configs
+│   ├── matcha.yaml
+│   ├── encoder/
+│   ├── decoder/
+│   ├── cfm/
+│   └── optimizer/
+├── experiment/             # Complete experiment configs
+│   ├── ljspeech.yaml
+│   ├── multispeaker.yaml
+│   └── ljspeech_from_durations.yaml
+├── trainer/                # PyTorch Lightning trainer configs
+├── callbacks/              # Training callbacks
+└── logger/                 # Logging configurations
+```
+
+## Main Training Configuration
+
+The main configuration file is `configs/train.yaml`:
+
+```yaml
+# configs/train.yaml
+defaults:
+  - _self_
+  - data: ljspeech              # Dataset config
+  - model: matcha               # Model config
+  - callbacks: default          # Training callbacks
+  - logger: tensorboard         # Logger config
+  - trainer: default            # Trainer config
+  - paths: default              # Path configs
+  - extras: default             # Extra utilities
+  - hydra: default              # Hydra config
+  - experiment: null            # Experiment overrides
+
+task_name: "train"
+run_name: ???
+tags: ["dev"]
+
+train: True                     # Enable training
+test: True                      # Test after training
+ckpt_path: null                 # Checkpoint to resume from
+seed: 1234                      # Random seed
+```
+
+## Data Configuration
+
+### Single-Speaker Dataset
+
+```yaml
+# configs/data/ljspeech.yaml
+_target_: matcha.data.text_mel_datamodule.TextMelDataModule
+name: ljspeech
+
+# File paths
+train_filelist_path: data/LJSpeech-1.1/train.txt
+valid_filelist_path: data/LJSpeech-1.1/val.txt
+
+# Data loading
+batch_size: 32
+num_workers: 20                 # Number of data loading workers
+pin_memory: True                # Pin memory for faster GPU transfer
+
+# Text processing
+cleaners: [english_cleaners2]   # Text cleaning functions
+add_blank: True                 # Add blank tokens between phonemes
+
+# Speaker configuration
+n_spks: 1                       # Number of speakers
+
+# Audio parameters
+n_fft: 1024                     # FFT window size
+n_feats: 80                     # Number of mel channels
+sample_rate: 22050              # Audio sample rate
+hop_length: 256                 # STFT hop length
+win_length: 1024                # STFT window length
+f_min: 0                        # Minimum frequency
+f_max: 8000                     # Maximum frequency
+
+# Normalization statistics (computed with matcha-data-stats)
+data_statistics:
+  mel_mean: -5.536622
+  mel_std: 2.116101
+
+seed: ${seed}                   # Inherit from main config
+load_durations: false           # Load pre-computed durations
+```
+
+### Multi-Speaker Dataset
+
+```yaml
+# configs/data/vctk.yaml
+defaults:
+  - ljspeech
+  - _self_
+
+_target_: matcha.data.text_mel_datamodule.TextMelDataModule
+name: vctk
+train_filelist_path: data/filelists/vctk_audio_sid_text_train_filelist.txt
+valid_filelist_path: data/filelists/vctk_audio_sid_text_val_filelist.txt
+
+batch_size: 32
+n_spks: 109                     # Number of speakers in VCTK
+
+data_statistics:
+  mel_mean: -6.630575
+  mel_std: 2.482914
+```
+
+## Model Configuration
+
+```yaml
+# configs/model/matcha.yaml
+defaults:
+  - _self_
+  - encoder: default.yaml
+  - decoder: default.yaml
+  - cfm: default.yaml           # Conditional Flow Matching
+  - optimizer: adam.yaml
+
+_target_: matcha.models.matcha_tts.MatchaTTS
+
+# Model architecture
+n_vocab: 178                    # Vocabulary size
+n_spks: ${data.n_spks}          # Inherit from data config
+spk_emb_dim: 64                 # Speaker embedding dimension
+n_feats: 80                     # Mel-spectrogram channels
+data_statistics: ${data.data_statistics}
+
+out_size: null                  # Decoder output size (null = auto, must be divisible by 4)
+prior_loss: true                # Enable prior loss
+use_precomputed_durations: ${data.load_durations}
+```
+
+### Optimizer Configuration
+
+```yaml
+# configs/model/optimizer/adam.yaml
+lr: 0.0001                      # Learning rate
+betas: [0.9, 0.999]
+eps: 1e-08
+weight_decay: 0.0
+```
+
+## Trainer Configuration
+
+```yaml
+# configs/trainer/default.yaml
+_target_: lightning.pytorch.trainer.Trainer
+
+default_root_dir: ${paths.output_dir}
+
+min_epochs: 1
+max_epochs: 10000
+
+acceleration: auto
+strategy: auto
+devices: 1                      # Number of GPUs
+num_nodes: 1
+
+precision: 32
+
+gradient_clip_val: 1.0          # Gradient clipping
+gradient_clip_algorithm: norm
+
+log_every_n_steps: 50
+val_check_interval: 1000        # Validation every N steps
+
+num_sanity_val_steps: 2
+```
+
+## Experiment Configurations
+
+Experiment configs combine and override base configurations:
+
+### Basic LJSpeech Training
+
+```yaml
+# configs/experiment/ljspeech.yaml
+# @package _global_
+
+defaults:
+  - override /data: ljspeech.yaml
+
+tags: ["ljspeech"]
+run_name: ljspeech
+```
+
+### Memory-Constrained Training
+
+```yaml
+# configs/experiment/ljspeech_min_memory.yaml
+# @package _global_
+
+defaults:
+  - override /data: ljspeech.yaml
+
+tags: ["ljspeech"]
+run_name: ljspeech_min
+
+model:
+  out_size: 172                 # Smaller decoder size
+```
+
+### Training with Pre-computed Durations
+
+```yaml
+# configs/experiment/ljspeech_from_durations.yaml
+# @package _global_
+
+defaults:
+  - override /data: ljspeech.yaml
+
+tags: ["ljspeech"]
+run_name: ljspeech
+
+data:
+  load_durations: True
+  batch_size: 64                # Can use larger batch size
+```
+
+### Multi-Speaker Training
+
+```yaml
+# configs/experiment/multispeaker.yaml
+# @package _global_
+
+defaults:
+  - override /data: vctk.yaml
+
+tags: ["multispeaker"]
+run_name: multispeaker
+```
+
+## Command-Line Overrides
+
+Hydra allows overriding any configuration parameter from the command line:
+
+### Basic Overrides
+
+```bash
+# Change batch size
+python matcha/train.py experiment=ljspeech data.batch_size=16
+
+# Change number of GPUs
+python matcha/train.py experiment=ljspeech trainer.devices=2
+
+# Change learning rate
+python matcha/train.py experiment=ljspeech model.optimizer.lr=0.0001
+```
+
+### Multiple Overrides
+
+```bash
+python matcha/train.py experiment=ljspeech \
+  data.batch_size=16 \
+  data.num_workers=8 \
+  trainer.devices=[0,1] \
+  trainer.max_epochs=500
+```
+
+### Nested Overrides
+
+```bash
+# Override nested parameters
+python matcha/train.py \
+  experiment=ljspeech \
+  model.encoder.n_layers=6 \
+  model.decoder.n_layers=6 \
+  model.optimizer.lr=0.0002
+```
+
+### Using Different Configs
+
+```bash
+# Use different data config
+python matcha/train.py data=vctk
+
+# Use different logger
+python matcha/train.py logger=wandb
+
+# Combine with experiment
+python matcha/train.py experiment=ljspeech logger=wandb
+```
+
+## Callbacks Configuration
+
+```yaml
+# configs/callbacks/default.yaml
+defaults:
+  - model_checkpoint
+  - model_summary
+  - rich_progress_bar
+
+model_checkpoint:
+  _target_: lightning.pytorch.callbacks.ModelCheckpoint
+  dirpath: ${paths.output_dir}/checkpoints
+  filename: epoch_{epoch:03d}
+  monitor: val/loss
+  mode: min
+  save_last: True
+  auto_insert_metric_name: False
+  save_top_k: 3                 # Keep top 3 checkpoints
+  every_n_epochs: 10
+```
+
+## Logger Configuration
+
+### TensorBoard (Default)
+
+```yaml
+# configs/logger/tensorboard.yaml
+tensorboard:
+  _target_: lightning.pytorch.loggers.tensorboard.TensorBoardLogger
+  save_dir: ${paths.output_dir}/tensorboard/
+  name: null
+  log_graph: False
+  default_hp_metric: True
+  prefix: ""
+```
+
+### Weights & Biases
+
+```yaml
+# configs/logger/wandb.yaml
+wandb:
+  _target_: lightning.pytorch.loggers.wandb.WandbLogger
+  project: "matcha-tts"
+  name: ${run_name}
+  save_dir: ${paths.output_dir}
+  offline: False
+  id: null
+  log_model: False
+```
+
+Use with:
+```bash
+python matcha/train.py experiment=ljspeech logger=wandb
+```
+
+## Advanced Configuration Patterns
+
+### Creating Custom Experiments
+
+<Steps>
+  <Step title="Create experiment file">
+    ```bash
+    touch configs/experiment/my_experiment.yaml
+    ```
+  </Step>
+
+  <Step title="Define overrides">
+    ```yaml
+    # configs/experiment/my_experiment.yaml
+    # @package _global_
+    
+    defaults:
+      - override /data: my_dataset.yaml
+      - override /logger: wandb
+    
+    tags: ["my_experiment", "custom"]
+    run_name: my_custom_run
+    
+    data:
+      batch_size: 16
+      num_workers: 4
+    
+    model:
+      optimizer:
+        lr: 0.0002
+    
+    trainer:
+      max_epochs: 1000
+      devices: [0, 1]
+      gradient_clip_val: 1.0
+    ```
+  </Step>
+
+  <Step title="Run experiment">
+    ```bash
+    python matcha/train.py experiment=my_experiment
+    ```
+  </Step>
+</Steps>
+
+### Configuration Composition
+
+Hydra supports powerful configuration composition:
+
+```bash
+# Mix multiple configs
+python matcha/train.py \
+  experiment=ljspeech \
+  logger=wandb \
+  callbacks=default \
+  +callbacks.early_stopping.patience=50
+```
+
+### Adding New Parameters
+
+```bash
+# Add new parameter with +
+python matcha/train.py experiment=ljspeech +trainer.accumulate_grad_batches=2
+```
+
+### Removing Parameters
+
+```bash
+# Remove parameter with ~
+python matcha/train.py experiment=ljspeech ~trainer.gradient_clip_val
+```
+
+## Environment Variables
+
+Configure paths and settings via `.env` file:
+
+```bash
+# .env
+DATA_DIR=/path/to/data
+OUTPUT_DIR=/path/to/outputs
+CUDA_VISIBLE_DEVICES=0,1
+```
+
+Reference in configs:
+```yaml
+train_filelist_path: ${oc.env:DATA_DIR}/LJSpeech-1.1/train.txt
+```
+
+## Configuration Tips
+
+<Warning>
+  Always validate your configuration before long training runs. Use `trainer.max_steps=100` to test your setup.
+</Warning>
+
+- Use experiments for reproducible configurations
+- Override specific parameters from command line for quick tests
+- Keep data statistics in version control for reproducibility
+- Use separate experiment configs for different training stages
+- Document custom configurations in your experiment files
+
+## Debugging Configurations
+
+Print the final composed configuration:
+
+```bash
+python matcha/train.py experiment=ljspeech --cfg job
+```
+
+Validate configuration without training:
+
+```bash
+python matcha/train.py experiment=ljspeech train=False test=False
+```
+
+## Next Steps
+
+- [Start training](/training/training-guide) with your configuration
+- [Create custom datasets](/training/custom-dataset)
+- [Extract durations](/training/duration-extraction) for faster training

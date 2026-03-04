@@ -1,0 +1,368 @@
+---
+title: Gradio Web Interface
+description: Interactive web UI for Matcha-TTS synthesis
+---
+
+## Overview
+
+Matcha-TTS includes a Gradio-based web interface for interactive text-to-speech synthesis. The interface provides real-time parameter adjustment, speaker selection, and immediate audio playback.
+
+## Launching the Interface
+
+<CodeGroup>
+```bash Command Line
+# Launch with default settings
+python -m matcha.app
+```
+
+```python Python Script
+from matcha.app import main
+
+main()
+```
+</CodeGroup>
+
+The interface will launch in your browser with a shareable public URL.
+
+## Features
+
+### Model Selection
+
+Choose between two pre-trained models:
+
+- **Multi Speaker (VCTK)**: 108 speakers from the VCTK dataset
+- **Single Speaker (LJ Speech)**: High-quality single female speaker
+
+Switching models automatically:
+- Adjusts the speaker selector visibility
+- Updates default speaking rate
+- Switches example sets
+- Loads appropriate vocoder
+
+### Text Input
+
+The main text box accepts any English text. The system will:
+1. Clean and normalize the text
+2. Convert to phonemes using `english_cleaners2`
+3. Display the phonetized sequence
+4. Synthesize speech
+
+### Speaker Selection
+
+**Multi-Speaker Mode (VCTK)**
+
+A slider appears with speaker IDs from 0 to 107. Each ID represents a different speaker from the VCTK dataset with unique voice characteristics.
+
+**Single-Speaker Mode (LJ Speech)**
+
+The speaker selector is hidden as only one voice is available.
+
+### Synthesis Controls
+
+The interface exposes three key hyperparameters:
+
+#### Number of ODE Steps
+
+- **Range:** 1-100
+- **Default:** 10
+- **Impact:** Quality vs. speed tradeoff
+
+```
+2 steps:  Very fast, slight quality reduction
+4 steps:  Fast, good quality
+10 steps: Balanced (default)
+50 steps: High quality, slower
+```
+
+#### Length Scale (Speaking Rate)
+
+- **Range:** 0.5-1.5
+- **Default:** 0.85 (VCTK) / 0.95 (LJ Speech)
+- **Impact:** Speech pace
+
+```
+0.5:  Fast speech (2x speed)
+1.0:  Normal pace
+1.5:  Slow speech (0.67x speed)
+```
+
+#### Sampling Temperature
+
+- **Range:** 0.00-2.00
+- **Default:** 0.667
+- **Step:** 0.16675
+- **Impact:** Prosody variation
+
+```
+0.00: Deterministic, flat prosody
+0.667: Natural variation (default)
+1.00: More expressive
+2.00: Highly variable, potentially unstable
+```
+
+### Real-Time Output
+
+After synthesis, the interface displays:
+
+1. **Phonetized Text:** Shows how the text was converted to phonemes
+2. **Mel-Spectrogram:** Visual representation of the generated speech
+3. **Audio Player:** Playback controls with download option
+
+## Interface Code Structure
+
+### Main Components
+
+The Gradio app is defined in `matcha/app.py:149-357`:
+
+```python
+with gr.Blocks(title="🍵 Matcha-TTS") as demo:
+    # State management
+    processed_text = gr.State(value=None)
+    processed_text_len = gr.State(value=None)
+    
+    # Model selector
+    model_type = gr.Radio(
+        ["Multi Speaker (VCTK)", "Single Speaker (LJ Speech)"],
+        value="Multi Speaker (VCTK)",
+        label="Choose a Model"
+    )
+    
+    # Text input and speaker control
+    text = gr.Textbox(value="", lines=2, label="Text to synthesise")
+    spk_slider = gr.Slider(
+        minimum=0, maximum=107, step=1, value=0,
+        label="Speaker ID"
+    )
+    
+    # Synthesis parameters
+    n_timesteps = gr.Slider(
+        label="Number of ODE steps",
+        minimum=1, maximum=100, step=1, value=10
+    )
+    length_scale = gr.Slider(
+        label="Length scale (Speaking rate)",
+        minimum=0.5, maximum=1.5, step=0.05, value=1.0
+    )
+    mel_temp = gr.Slider(
+        label="Sampling temperature",
+        minimum=0.00, maximum=2.001, step=0.16675, value=0.667
+    )
+    
+    # Outputs
+    phonetised_text = gr.Textbox(interactive=False)
+    mel_spectrogram = gr.Image(interactive=False)
+    audio = gr.Audio(interactive=False)
+```
+
+### Synthesis Pipeline
+
+The synthesis process follows two steps:
+
+**Step 1: Text Processing** (`matcha/app.py:102-104`)
+
+```python
+@torch.inference_mode()
+def process_text_gradio(text):
+    output = process_text(1, text, device)
+    return output["x_phones"][1::2], output["x"], output["x_lengths"]
+```
+
+**Step 2: Mel Synthesis** (`matcha/app.py:108-122`)
+
+```python
+@torch.inference_mode()
+def synthesise_mel(text, text_length, n_timesteps, temperature, length_scale, spk):
+    spk = torch.tensor([spk], device=device, dtype=torch.long) if spk >= 0 else None
+    output = model.synthesise(
+        text,
+        text_length,
+        n_timesteps=n_timesteps,
+        temperature=temperature,
+        spks=spk,
+        length_scale=length_scale,
+    )
+    output["waveform"] = to_waveform(output["mel"], vocoder, denoiser)
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as fp:
+        sf.write(fp.name, output["waveform"], 22050, "PCM_24")
+    return fp.name, plot_tensor(output["mel"].squeeze().cpu().numpy())
+```
+
+### Dynamic Model Loading
+
+The interface loads models on-demand (`matcha/app.py:72-98`):
+
+```python
+def load_model_ui(model_type, textbox):
+    model_name = RADIO_OPTIONS[model_type]["model"]
+    vocoder_name = RADIO_OPTIONS[model_type]["vocoder"]
+    
+    global model, vocoder, denoiser, CURRENTLY_LOADED_MODEL
+    if CURRENTLY_LOADED_MODEL != model_name:
+        model, vocoder, denoiser = load_model(model_name, vocoder_name)
+        CURRENTLY_LOADED_MODEL = model_name
+    
+    # Update UI based on model type
+    if model_name == "matcha_ljspeech":
+        spk_slider = gr.update(visible=False, value=-1)
+        single_speaker_examples = gr.update(visible=True)
+        multi_speaker_examples = gr.update(visible=False)
+        length_scale = gr.update(value=0.95)
+    else:
+        spk_slider = gr.update(visible=True, value=0)
+        single_speaker_examples = gr.update(visible=False)
+        multi_speaker_examples = gr.update(visible=True)
+        length_scale = gr.update(value=0.85)
+    
+    return (...)
+```
+
+## Pre-Cached Examples
+
+The interface includes cached examples for instant playback without synthesis:
+
+### Single Speaker Examples
+
+```python
+# From matcha/app.py:236-285
+examples = [
+    [
+        "We propose Matcha-TTS, a new approach to non-autoregressive neural TTS...",
+        50, 0.677, 0.95
+    ],
+    [
+        "The Secret Service believed that it was very doubtful...",
+        2, 0.677, 0.95   # Fast, 2 steps
+    ],
+    [
+        "The Secret Service believed that it was very doubtful...",
+        10, 0.677, 0.95  # Default, 10 steps
+    ],
+    # More variations with different step counts
+]
+```
+
+### Multi-Speaker Examples
+
+```python
+# From matcha/app.py:288-331
+multi_speaker_examples = [
+    ["Hello everyone! I am speaker 0...", 10, 0.677, 0.85, 0],
+    ["Hello everyone! I am speaker 16...", 10, 0.677, 0.85, 16],
+    ["Hello everyone! I am speaker 44...", 50, 0.677, 0.85, 44],
+    ["Hello everyone! I am speaker 45...", 50, 0.677, 0.85, 45],
+    ["Hello everyone! I am speaker 58...", 4, 0.677, 0.85, 58],
+]
+```
+
+Examples are cached using `cache_examples=True` to avoid re-synthesis.
+
+## Model Configuration
+
+Default configuration (`matcha/app.py:23-28`):
+
+```python
+args = Namespace(
+    cpu=False,                    # Use GPU if available
+    model="matcha_vctk",         # Start with multi-speaker
+    vocoder="hifigan_univ_v1",   # Universal vocoder
+    spk=0,                        # Default speaker ID
+)
+```
+
+Model options mapping (`matcha/app.py:42-51`):
+
+```python
+RADIO_OPTIONS = {
+    "Multi Speaker (VCTK)": {
+        "model": "matcha_vctk",
+        "vocoder": "hifigan_univ_v1",
+    },
+    "Single Speaker (LJ Speech)": {
+        "model": "matcha_ljspeech",
+        "vocoder": "hifigan_T2_v1",
+    },
+}
+```
+
+## Technical Details
+
+### Audio Output Specifications
+
+- **Sample Rate:** 22050 Hz
+- **Format:** WAV (PCM_24)
+- **Channels:** Mono
+- **Temporary Storage:** Files created in system temp directory
+
+### GPU Support
+
+The interface automatically detects GPU availability:
+
+```python
+device = get_device(args)
+# Returns torch.device("cuda") if GPU available, else torch.device("cpu")
+```
+
+### Model Downloads
+
+All models are automatically downloaded on first use (`matcha/app.py:54-57`):
+
+```python
+assert_model_downloaded(MATCHA_TTS_LOC("matcha_ljspeech"), MATCHA_URLS["matcha_ljspeech"])
+assert_model_downloaded(VOCODER_LOC("hifigan_T2_v1"), VOCODER_URLS["hifigan_T2_v1"])
+assert_model_downloaded(MATCHA_TTS_LOC("matcha_vctk"), MATCHA_URLS["matcha_vctk"])
+assert_model_downloaded(VOCODER_LOC("hifigan_univ_v1"), VOCODER_URLS["hifigan_univ_v1"])
+```
+
+Models are stored in the user data directory (typically `~/.local/share/matcha_tts/`).
+
+## Customization
+
+You can customize the interface by modifying `matcha/app.py`:
+
+### Add Custom Examples
+
+```python
+custom_examples = gr.Examples(
+    examples=[
+        ["Your custom text here", 10, 0.667, 0.95, 0],
+        # Add more examples
+    ],
+    fn=multispeaker_example_cacher,
+    inputs=[text, n_timesteps, mel_temp, length_scale, spk_slider],
+    outputs=[phonetised_text, audio, mel_spectrogram],
+    cache_examples=True,
+)
+```
+
+### Adjust Default Parameters
+
+```python
+# Change default temperature
+mel_temp = gr.Slider(
+    label="Sampling temperature",
+    minimum=0.00,
+    maximum=2.001,
+    step=0.16675,
+    value=0.8,  # Changed from 0.667
+    interactive=True,
+)
+```
+
+### Share Publicly
+
+The interface launches with `share=True` by default, creating a public URL:
+
+```python
+demo.queue().launch(share=True)
+```
+
+Set `share=False` for local-only access.
+
+## Tips for Best Results
+
+1. **Start with examples:** Click cached examples to hear quality before experimenting
+2. **Adjust one parameter at a time:** Easier to understand each parameter's effect
+3. **Use 10 steps as baseline:** Good balance for testing, increase for final output
+4. **Keep temperature at 0.667:** Sweet spot for natural prosody
+5. **Try different speakers:** VCTK has diverse voices (try 0, 16, 44, 45, 58)
+6. **Check phonetized text:** Verify correct pronunciation before synthesis

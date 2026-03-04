@@ -1,0 +1,225 @@
+---
+title: CLI Usage
+description: Command-line interface for Matcha-TTS synthesis
+---
+
+## Overview
+
+Matcha-TTS provides a powerful command-line interface for text-to-speech synthesis. The CLI supports both single-speaker and multi-speaker models, batch processing, and extensive customization of synthesis parameters.
+
+## Basic Usage
+
+<CodeGroup>
+```bash Single Text
+matcha-tts --text "Hello, world! This is Matcha-TTS."
+```
+
+```bash From File
+matcha-tts --file input.txt
+```
+
+```bash Multi-Speaker
+matcha-tts --text "Hello from speaker 42" --model matcha_vctk --spk 42
+```
+</CodeGroup>
+
+## Available Models
+
+Matcha-TTS comes with two pre-trained models:
+
+- **matcha_ljspeech**: Single-speaker model trained on LJ Speech dataset
+- **matcha_vctk**: Multi-speaker model trained on VCTK dataset (108 speakers, IDs 0-107)
+
+## CLI Arguments
+
+### Model Selection
+
+<ParamField path="--model" type="string" default="matcha_ljspeech">
+  Model to use for synthesis. Choices: `matcha_ljspeech`, `matcha_vctk`
+  
+  The model determines the voice quality and available speakers.
+</ParamField>
+
+<ParamField path="--checkpoint_path" type="string" default="None">
+  Path to a custom model checkpoint. Use this to load your own trained models.
+  
+  When using a custom checkpoint, consider using `--vocoder hifigan_univ_v1` for best compatibility.
+</ParamField>
+
+<ParamField path="--vocoder" type="string" default="auto">
+  Vocoder to use for waveform generation. Choices: `hifigan_T2_v1`, `hifigan_univ_v1`
+  
+  Default vocoder is automatically selected based on the model:
+  - `matcha_ljspeech` → `hifigan_T2_v1`
+  - `matcha_vctk` → `hifigan_univ_v1`
+</ParamField>
+
+### Input
+
+<ParamField path="--text" type="string" required>
+  Text to synthesize. Either `--text` or `--file` must be provided.
+  
+  Example: `--text "The quick brown fox jumps over the lazy dog"`
+</ParamField>
+
+<ParamField path="--file" type="string" required>
+  Path to text file with sentences to synthesize (one per line).
+  
+  When using `--file`, consider using `--batched` for faster processing.
+</ParamField>
+
+### Speaker Control
+
+<ParamField path="--spk" type="integer" default="0">
+  Speaker ID for multi-speaker models.
+  
+  - For `matcha_ljspeech`: Not applicable (single speaker)
+  - For `matcha_vctk`: Valid range is 0-107
+  
+  Example: `--spk 42`
+</ParamField>
+
+### Synthesis Parameters
+
+<ParamField path="--temperature" type="float" default="0.667">
+  Variance of the noise distribution (controls prosody variation).
+  
+  - Higher values (e.g., 1.0): More expressive but less stable
+  - Lower values (e.g., 0.3): More stable but less expressive
+  - Must be ≥ 0
+  
+  See [Parameters](/inference/parameters) for detailed guidance.
+</ParamField>
+
+<ParamField path="--speaking_rate" type="float" default="auto">
+  Controls speech pace. Higher values = slower speech.
+  
+  Default values:
+  - `matcha_ljspeech`: 0.95
+  - `matcha_vctk`: 0.85
+  
+  Typical range: 0.5 (fast) to 1.5 (slow)
+  
+  Must be > 0
+</ParamField>
+
+<ParamField path="--steps" type="integer" default="10">
+  Number of ODE (Ordinary Differential Equation) steps for synthesis.
+  
+  - More steps: Higher quality, slower synthesis
+  - Fewer steps: Faster synthesis, slight quality reduction
+  - Recommended range: 4-50
+  - Must be > 0
+  
+  Example: `--steps 20` for higher quality
+</ParamField>
+
+### Vocoder Options
+
+<ParamField path="--denoiser_strength" type="float" default="0.00025">
+  Strength of the vocoder bias denoiser.
+  
+  Higher values reduce background noise but may affect audio quality.
+</ParamField>
+
+### Output Options
+
+<ParamField path="--output_folder" type="string" default="current directory">
+  Directory where generated audio files will be saved.
+  
+  Example: `--output_folder ./outputs`
+</ParamField>
+
+### Performance Options
+
+<ParamField path="--batched" type="boolean" default="false">
+  Enable batched inference for processing multiple texts.
+  
+  Use this flag when processing files with multiple sentences for significant speedup.
+</ParamField>
+
+<ParamField path="--batch_size" type="integer" default="32">
+  Batch size for batched inference (only used with `--batched`).
+  
+  Larger batches are faster but require more memory.
+</ParamField>
+
+<ParamField path="--cpu" type="boolean" default="false">
+  Force CPU inference even if GPU is available.
+  
+  By default, GPU is used if available.
+</ParamField>
+
+## Examples
+
+### Single Speaker Synthesis
+
+```bash
+# Basic synthesis with LJ Speech model
+matcha-tts --text "Matcha-TTS is a fast TTS architecture with conditional flow matching."
+
+# Higher quality with more steps
+matcha-tts --text "High quality synthesis." --steps 50 --temperature 0.667
+
+# Adjust speaking rate
+matcha-tts --text "Speaking slowly." --speaking_rate 1.2
+```
+
+### Multi-Speaker Synthesis
+
+```bash
+# Use specific speaker from VCTK
+matcha-tts --model matcha_vctk --spk 16 --text "Hello from speaker 16!"
+
+# Different speakers with adjusted parameters
+matcha-tts --model matcha_vctk --spk 44 --speaking_rate 0.85 --temperature 0.677 \
+  --text "This is speaker 44 speaking."
+```
+
+### Batch Processing
+
+```bash
+# Process multiple sentences from file
+matcha-tts --file sentences.txt --batched --batch_size 16
+
+# Batch processing with custom output folder
+matcha-tts --file inputs.txt --batched --output_folder ./audio_outputs
+```
+
+### Custom Models
+
+```bash
+# Use your own trained model
+matcha-tts --checkpoint_path ./my_model.ckpt \
+  --vocoder hifigan_univ_v1 \
+  --text "Testing custom model."
+```
+
+## Output Files
+
+The CLI generates three files per utterance:
+
+1. **{filename}.wav**: Audio file (22050 Hz, PCM_24)
+2. **{filename}.npy**: Mel-spectrogram (NumPy format)
+3. **{filename}.png**: Mel-spectrogram visualization
+
+Filename format:
+- Single speaker: `utterance_001.wav`, `utterance_002.wav`, ...
+- Multi-speaker: `utterance_001_speaker_042.wav`, ...
+
+## Performance Metrics
+
+The CLI reports Real-Time Factor (RTF) metrics:
+
+- **Matcha-TTS RTF**: Mel-spectrogram generation speed
+- **Matcha-TTS + VOCODER RTF**: End-to-end synthesis speed
+
+RTF < 1.0 means faster than real-time synthesis.
+
+## Tips
+
+- Start with default parameters and adjust based on your needs
+- Use `--batched` for files with multiple sentences (10x+ speedup)
+- Try different `--steps` values (2, 4, 10, 50) to balance quality/speed
+- Use `--temperature 0.667` as a good default for natural prosody
+- For custom models, `hifigan_univ_v1` vocoder usually works best

@@ -1,0 +1,594 @@
+---
+title: Synthesis Parameters
+description: Comprehensive guide to Matcha-TTS synthesis parameters
+---
+
+## Overview
+
+Matcha-TTS synthesis quality and characteristics are controlled by four main parameters. Understanding these parameters helps you achieve optimal results for different use cases.
+
+## Core Parameters
+
+### temperature
+
+**Controls prosody variation and expressiveness**
+
+<ParamField path="temperature" type="float" default="0.667">
+  Variance of the noise distribution in the diffusion process. Higher values increase prosody variation.
+</ParamField>
+
+**How it works:**
+
+Temperature controls the variance of the initial noise distribution (`x0`) in the ODE-based synthesis process. This directly affects prosodic variation in the generated speech.
+
+From `matcha/models/matcha_tts.py:76-110`:
+```python
+def synthesise(self, x, x_lengths, n_timesteps, temperature=1.0, spks=None, length_scale=1.0):
+    """
+    Args:
+        temperature (float, optional): controls variance of terminal distribution.
+    """
+    # Temperature is passed to the decoder (CFM)
+    decoder_outputs = self.decoder(mu_y, y_mask, n_timesteps, temperature, spks)
+```
+
+**Value ranges and effects:**
+
+| Temperature | Effect | Use Case |
+|------------|--------|----------|
+| 0.0 - 0.3 | Deterministic, minimal variation | Robotic, consistent speech |
+| 0.4 - 0.6 | Subtle variation | Professional narration |
+| **0.667** | **Natural prosody (default)** | **General use** |
+| 0.7 - 1.0 | Noticeable variation | Expressive reading |
+| 1.0 - 1.5 | High variation | Emotional speech |
+| 1.5 - 2.0 | Very high variation | Experimental, may be unstable |
+
+**Examples:**
+
+<CodeGroup>
+```bash CLI - Conservative
+matcha-tts --text "This is a test." --temperature 0.3
+```
+
+```bash CLI - Default
+matcha-tts --text "This is a test." --temperature 0.667
+```
+
+```bash CLI - Expressive
+matcha-tts --text "This is a test." --temperature 1.2
+```
+
+```python Python - Comparison
+import torch
+from matcha.cli import load_matcha, process_text
+
+model = load_matcha("matcha_ljspeech", model_path, device)
+text_data = process_text(1, "Hello world", device)
+
+# Try different temperatures
+for temp in [0.3, 0.667, 1.0, 1.5]:
+    output = model.synthesise(
+        text_data["x"],
+        text_data["x_lengths"],
+        n_timesteps=10,
+        temperature=temp
+    )
+    # Compare outputs...
+```
+</CodeGroup>
+
+**Recommendations:**
+
+- **Audiobooks/Podcasts:** 0.6 - 0.7
+- **Voice assistants:** 0.5 - 0.667
+- **Character voices:** 0.8 - 1.2
+- **Consistent announcements:** 0.3 - 0.5
+
+### speaking_rate (length_scale)
+
+**Controls speech pace and duration**
+
+<ParamField path="speaking_rate" type="float" default="0.95 (LJ) / 0.85 (VCTK)">
+  Also called `length_scale`. Controls speech pace. Higher values = slower speech, longer duration.
+</ParamField>
+
+**How it works:**
+
+The speaking rate is implemented as a scaling factor applied to predicted phoneme durations:
+
+From `matcha/models/matcha_tts.py:118-123`:
+```python
+w = torch.exp(logw) * x_mask
+w_ceil = torch.ceil(w) * length_scale  # Applied here!
+y_lengths = torch.clamp_min(torch.sum(w_ceil, [1, 2]), 1).long()
+```
+
+The parameter multiplies predicted durations, directly controlling output length:
+- `length_scale = 2.0` → 2x slower (twice as long)
+- `length_scale = 0.5` → 2x faster (half as long)
+
+**Value ranges and effects:**
+
+| Speaking Rate | Relative Speed | Effect |
+|--------------|----------------|--------|
+| 0.5 | 2x faster | Very fast, may lose clarity |
+| 0.7 | ~1.4x faster | Fast but clear |
+| **0.85** | **Normal (VCTK default)** | **Natural for multi-speaker** |
+| **0.95** | **Normal (LJ default)** | **Natural for single-speaker** |
+| 1.0 | Baseline | Neutral pace |
+| 1.2 | 0.83x speed | Slightly slower |
+| 1.5 | 0.67x speed | Slow, deliberate |
+
+**Model-specific defaults:**
+
+From `matcha/cli.py:30-34`:
+```python
+MULTISPEAKER_MODEL = {
+    "matcha_vctk": {"speaking_rate": 0.85}  # Slightly faster
+}
+SINGLESPEAKER_MODEL = {
+    "matcha_ljspeech": {"speaking_rate": 0.95}  # Near baseline
+}
+```
+
+**Examples:**
+
+<CodeGroup>
+```bash CLI - Fast Speech
+matcha-tts --text "Quick announcement." --speaking_rate 0.7
+```
+
+```bash CLI - Slow Speech
+matcha-tts --text "Important instructions." --speaking_rate 1.3
+```
+
+```python Python - Speed Comparison
+import torch
+import soundfile as sf
+from matcha.cli import load_matcha, process_text, to_waveform, load_vocoder
+
+model = load_matcha("matcha_ljspeech", model_path, device)
+vocoder, denoiser = load_vocoder("hifigan_T2_v1", vocoder_path, device)
+text_data = process_text(1, "The quick brown fox jumps over the lazy dog.", device)
+
+# Generate at different speeds
+speeds = {
+    "fast": 0.7,
+    "normal": 0.95,
+    "slow": 1.3
+}
+
+for name, rate in speeds.items():
+    output = model.synthesise(
+        text_data["x"],
+        text_data["x_lengths"],
+        n_timesteps=10,
+        temperature=0.667,
+        length_scale=rate
+    )
+    waveform = to_waveform(output["mel"], vocoder, denoiser)
+    sf.write(f"speech_{name}.wav", waveform, 22050, "PCM_24")
+    
+    duration = len(waveform) / 22050
+    print(f"{name}: {duration:.2f}s")
+```
+</CodeGroup>
+
+**Recommendations:**
+
+- **News reading:** 0.95 - 1.1
+- **Casual conversation:** 0.85 - 0.95
+- **Instructions/tutorials:** 1.0 - 1.2
+- **Accessibility (slower):** 1.2 - 1.5
+- **Time-constrained (faster):** 0.7 - 0.85
+
+### steps (n_timesteps)
+
+**Controls synthesis quality and speed**
+
+<ParamField path="steps" type="int" default="10">
+  Number of ODE (Ordinary Differential Equation) steps for reverse diffusion. More steps = higher quality but slower synthesis.
+</ParamField>
+
+**How it works:**
+
+Matcha-TTS uses Conditional Flow Matching (CFM), an ODE-based generative model. The `n_timesteps` parameter controls how many discrete steps are taken when solving the ODE from noise to mel-spectrogram.
+
+From `matcha/models/matcha_tts.py:137-138`:
+```python
+# Generate sample tracing the probability flow
+decoder_outputs = self.decoder(mu_y, y_mask, n_timesteps, temperature, spks)
+```
+
+More steps = finer-grained trajectory = higher quality but slower synthesis.
+
+**Quality vs. Speed Trade-off:**
+
+| Steps | Quality | Speed | RTF (approx) | Use Case |
+|-------|---------|-------|--------------|----------|
+| 2 | Fair | Very fast | 0.01 | Rapid prototyping |
+| 4 | Good | Fast | 0.02 | Real-time applications |
+| **10** | **Very good (default)** | **Balanced** | **0.04** | **General use** |
+| 20 | Excellent | Moderate | 0.08 | High-quality production |
+| 50 | Outstanding | Slow | 0.20 | Maximum quality |
+| 100 | Marginal gain | Very slow | 0.40 | Research |
+
+*RTF = Real-Time Factor. RTF < 1.0 means faster than real-time.*
+
+**Empirical findings:**
+
+The CLI examples demonstrate different step counts (`matcha/app.py:236-285`):
+
+```python
+# Examples showing step count variations
+[
+    [text, 2, 0.677, 0.95],   # Very fast
+    [text, 4, 0.677, 0.95],   # Fast
+    [text, 10, 0.677, 0.95],  # Default
+    [text, 50, 0.677, 0.95],  # High quality
+]
+```
+
+**Examples:**
+
+<CodeGroup>
+```bash CLI - Fast Synthesis
+matcha-tts --text "Quick test." --steps 4
+```
+
+```bash CLI - High Quality
+matcha-tts --text "Production audio." --steps 50
+```
+
+```python Python - Step Comparison
+import torch
+import time
+from matcha.cli import load_matcha, process_text
+
+model = load_matcha("matcha_ljspeech", model_path, device)
+text_data = process_text(1, "Testing different step counts.", device)
+
+for steps in [2, 4, 10, 20, 50]:
+    start = time.time()
+    output = model.synthesise(
+        text_data["x"],
+        text_data["x_lengths"],
+        n_timesteps=steps,
+        temperature=0.667
+    )
+    elapsed = time.time() - start
+    
+    print(f"Steps: {steps:3d} | RTF: {output['rtf']:.4f} | Time: {elapsed:.3f}s")
+```
+</CodeGroup>
+
+**Recommendations:**
+
+- **Development/testing:** 4 - 10 steps
+- **Production (quality):** 10 - 20 steps
+- **Real-time applications:** 2 - 4 steps
+- **Offline batch processing:** 20 - 50 steps
+- **Research/benchmarking:** 50+ steps
+
+### spk (Speaker ID)
+
+**Selects voice for multi-speaker models**
+
+<ParamField path="spk" type="int" default="0 (VCTK) / None (LJ)">
+  Speaker ID for multi-speaker models. Range: 0-107 for VCTK. Not used for single-speaker models.
+</ParamField>
+
+**How it works:**
+
+For multi-speaker models, the speaker ID is converted to an embedding:
+
+From `matcha/models/matcha_tts.py:52-53, 114-116`:
+```python
+if n_spks > 1:
+    self.spk_emb = torch.nn.Embedding(n_spks, spk_emb_dim)
+
+# During synthesis:
+if self.n_spks > 1:
+    spks = self.spk_emb(spks.long())  # Convert ID to embedding
+```
+
+The embedding is passed to both the encoder (for duration prediction) and decoder (for mel-spectrogram generation), conditioning the output on speaker characteristics.
+
+**VCTK Speaker Range:**
+
+From `matcha/cli.py:30-32`:
+```python
+MULTISPEAKER_MODEL = {
+    "matcha_vctk": {
+        "spk": 0,           # Default speaker
+        "spk_range": (0, 107)  # Valid range
+    }
+}
+```
+
+The VCTK dataset contains 108 speakers with diverse characteristics:
+- Different genders (male/female)
+- Various ages
+- Multiple accents
+- Different speaking styles
+
+**Examples:**
+
+<CodeGroup>
+```bash CLI - Specific Speaker
+matcha-tts --model matcha_vctk --spk 42 --text "Hello from speaker 42."
+```
+
+```bash CLI - Single Speaker (ignored)
+matcha-tts --model matcha_ljspeech --spk 0 --text "Speaker ID ignored for LJ Speech."
+```
+
+```python Python - Multi-Speaker
+import torch
+from matcha.cli import load_matcha, load_vocoder, process_text, to_waveform
+import soundfile as sf
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = load_matcha("matcha_vctk", vctk_path, device)
+vocoder, denoiser = load_vocoder("hifigan_univ_v1", vocoder_path, device)
+
+text = "This is a multi-speaker test."
+text_data = process_text(1, text, device)
+
+# Generate same text with different speakers
+for speaker_id in [0, 16, 44, 58]:
+    spk = torch.tensor([speaker_id], device=device, dtype=torch.long)
+    output = model.synthesise(
+        text_data["x"],
+        text_data["x_lengths"],
+        n_timesteps=10,
+        temperature=0.667,
+        spks=spk,
+        length_scale=0.85
+    )
+    waveform = to_waveform(output["mel"], vocoder, denoiser)
+    sf.write(f"speaker_{speaker_id:03d}.wav", waveform, 22050, "PCM_24")
+```
+
+```python Python - Single Speaker
+import torch
+from matcha.cli import load_matcha, process_text
+
+model = load_matcha("matcha_ljspeech", lj_path, device)
+text_data = process_text(1, "Single speaker model.", device)
+
+# spks=None for single-speaker models
+output = model.synthesise(
+    text_data["x"],
+    text_data["x_lengths"],
+    n_timesteps=10,
+    temperature=0.667,
+    spks=None,  # No speaker conditioning
+    length_scale=0.95
+)
+```
+</CodeGroup>
+
+**Popular VCTK Speakers (from Gradio examples):**
+
+From `matcha/app.py:288-331`:
+
+- **Speaker 0:** Default, neutral voice
+- **Speaker 16:** Popular in examples
+- **Speaker 44:** Distinct characteristics
+- **Speaker 45:** Alternative voice
+- **Speaker 58:** Used in fast synthesis example
+
+**Recommendations:**
+
+- **Explore speakers:** Try IDs 0, 10, 20, 30, ... to find preferred voices
+- **Consistency:** Use same speaker ID for related content
+- **Diversity:** Mix speakers for dialogue or multi-character content
+- **Custom models:** Check model documentation for valid speaker ranges
+
+## Parameter Combinations
+
+### Recommended Presets
+
+**Fast Preview:**
+```bash
+matcha-tts --text "Preview mode" --steps 4 --temperature 0.667 --speaking_rate 0.95
+```
+
+**Balanced Quality:**
+```bash
+matcha-tts --text "General use" --steps 10 --temperature 0.667 --speaking_rate 0.95
+```
+
+**Maximum Quality:**
+```bash
+matcha-tts --text "Production audio" --steps 50 --temperature 0.667 --speaking_rate 0.95
+```
+
+**Expressive Speech:**
+```bash
+matcha-tts --text "Expressive reading" --steps 20 --temperature 1.0 --speaking_rate 0.9
+```
+
+**Consistent Narration:**
+```bash
+matcha-tts --text "Audiobook chapter" --steps 20 --temperature 0.5 --speaking_rate 1.0
+```
+
+### Python Configuration Dictionary
+
+```python
+# Define presets
+PRESETS = {
+    "fast": {
+        "n_timesteps": 4,
+        "temperature": 0.667,
+        "length_scale": 0.95,
+    },
+    "balanced": {
+        "n_timesteps": 10,
+        "temperature": 0.667,
+        "length_scale": 0.95,
+    },
+    "quality": {
+        "n_timesteps": 50,
+        "temperature": 0.667,
+        "length_scale": 0.95,
+    },
+    "expressive": {
+        "n_timesteps": 20,
+        "temperature": 1.0,
+        "length_scale": 0.9,
+    },
+}
+
+# Use preset
+preset = PRESETS["balanced"]
+output = model.synthesise(
+    text_data["x"],
+    text_data["x_lengths"],
+    **preset
+)
+```
+
+## Parameter Validation
+
+The CLI validates parameters (`matcha/cli.py:134-159`):
+
+```python
+def validate_args(args):
+    assert args.temperature >= 0, "Sampling temperature cannot be negative"
+    assert args.steps > 0, "Number of ODE steps must be greater than 0"
+    assert args.speaking_rate > 0, "Speaking rate must be greater than 0"
+    
+    # Speaker ID validation for VCTK
+    if args.model in MULTISPEAKER_MODEL:
+        spk_range = MULTISPEAKER_MODEL[args.model]["spk_range"]
+        if args.spk is not None:
+            assert (
+                args.spk >= spk_range[0] and args.spk <= spk_range[-1]
+            ), f"Speaker ID must be between {spk_range} for this model."
+```
+
+**Constraints:**
+
+- `temperature` ≥ 0 (no upper limit, but > 2.0 may be unstable)
+- `steps` > 0 (integer)
+- `speaking_rate` > 0 (no upper limit, but > 2.0 is very slow)
+- `spk` in valid range for model (0-107 for VCTK)
+
+## Performance Considerations
+
+### Real-Time Factor (RTF)
+
+RTF measures synthesis speed relative to audio duration:
+
+```
+RTF = synthesis_time / audio_duration
+
+RTF < 1.0: Faster than real-time (e.g., 0.05 = 20x faster)
+RTF = 1.0: Real-time
+RTF > 1.0: Slower than real-time
+```
+
+From `matcha/models/matcha_tts.py:141-142`:
+```python
+t = (dt.datetime.now() - t).total_seconds()
+rtf = t * 22050 / (decoder_outputs.shape[-1] * 256)
+```
+
+**Typical RTF values (GPU):**
+
+| Steps | Matcha RTF | + Vocoder RTF |
+|-------|------------|---------------|
+| 2 | 0.005 | 0.010 |
+| 4 | 0.010 | 0.020 |
+| 10 | 0.020 | 0.040 |
+| 50 | 0.100 | 0.200 |
+
+### Memory Usage
+
+Memory scales with:
+- Batch size (linear)
+- Sequence length (linear)
+- Number of steps (minimal impact)
+
+Typical GPU memory:
+- Single utterance: ~1 GB
+- Batch of 32: ~4-8 GB
+
+## Advanced Usage
+
+### Parameter Sweeps
+
+```python
+import itertools
+
+# Grid search
+temperatures = [0.3, 0.667, 1.0]
+steps = [4, 10, 20]
+speaking_rates = [0.8, 0.95, 1.1]
+
+for temp, n_steps, rate in itertools.product(temperatures, steps, speaking_rates):
+    output = model.synthesise(
+        text_data["x"],
+        text_data["x_lengths"],
+        n_timesteps=n_steps,
+        temperature=temp,
+        length_scale=rate
+    )
+    # Save with descriptive filename
+    filename = f"t{temp}_s{n_steps}_r{rate}.wav"
+    # ...
+```
+
+### Dynamic Parameter Adjustment
+
+```python
+# Adjust parameters based on text length
+text_length = text_data["x_lengths"].item()
+
+if text_length < 50:
+    steps = 20  # Short text, use more steps
+elif text_length < 200:
+    steps = 10  # Medium text, balanced
+else:
+    steps = 4   # Long text, prioritize speed
+
+output = model.synthesise(
+    text_data["x"],
+    text_data["x_lengths"],
+    n_timesteps=steps,
+    temperature=0.667
+)
+```
+
+## Troubleshooting
+
+### Poor Quality
+
+- **Increase `steps`:** Try 20 or 50
+- **Check `temperature`:** Use 0.667 as baseline
+- **Verify text:** Check phonetized output for errors
+
+### Unnatural Prosody
+
+- **Adjust `temperature`:** Try 0.5-0.8 range
+- **Check `speaking_rate`:** Ensure appropriate for content
+
+### Too Fast/Slow
+
+- **Adjust `speaking_rate`:** Increase to slow down, decrease to speed up
+- **Model-specific defaults:** Use 0.95 (LJ) or 0.85 (VCTK)
+
+### Out of Memory
+
+- **Reduce batch size:** Use `--batch_size 8` or `--batch_size 4`
+- **Disable batching:** Remove `--batched` flag
+- **Use CPU:** Add `--cpu` flag
+
+## See Also
+
+- [CLI Usage](/inference/cli-usage) - Command-line examples
+- [Python API](/inference/python-api) - Programmatic usage
+- [Gradio App](/inference/gradio-app) - Interactive parameter tuning

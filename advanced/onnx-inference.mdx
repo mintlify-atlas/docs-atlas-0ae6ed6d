@@ -1,0 +1,251 @@
+---
+title: 'ONNX Inference'
+description: 'Run inference on ONNX-exported Matcha-TTS models for optimized deployment'
+icon: 'play'
+---
+
+## Overview
+
+Once you've exported a Matcha-TTS model to ONNX format, you can run inference using ONNX Runtime. This enables deployment on various platforms with optimized CPU and GPU execution.
+
+## Installation
+
+Install ONNX Runtime for inference:
+
+### CPU Inference
+
+```bash
+pip install onnxruntime
+```
+
+### GPU Inference
+
+```bash
+pip install onnxruntime-gpu
+```
+
+<Warning>
+For GPU inference, ensure you have CUDA installed and use the `onnxruntime-gpu` package along with the `--gpu` flag.
+</Warning>
+
+## Basic Inference
+
+### Text Input
+
+Synthesize speech from text:
+
+```bash
+python3 -m matcha.onnx.infer model.onnx --text "Hello, world!" --output-dir ./outputs
+```
+
+### File Input
+
+Synthesize from a text file:
+
+```bash
+python3 -m matcha.onnx.infer model.onnx --file input.txt --output-dir ./outputs
+```
+
+## Command Arguments
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `model` | str | Required | Path to ONNX model file |
+| `--text` | str | None | Text to synthesize |
+| `--file` | str | None | Path to text file to synthesize |
+| `--vocoder` | str | None | Path to external vocoder ONNX model |
+| `--spk` | int | None | Speaker ID for multi-speaker models |
+| `--temperature` | float | 0.667 | Variance of the noise (controls randomness) |
+| `--speaking-rate` | float | 1.0 | Speaking rate (higher = slower speech) |
+| `--gpu` | flag | False | Use GPU for inference |
+| `--output-dir` | str | Current dir | Output folder to save results |
+
+## Synthesis Parameters
+
+### Temperature
+
+Controls the variance of the noise in the diffusion process:
+
+```bash
+python3 -m matcha.onnx.infer model.onnx --text "Hello" --temperature 0.4
+```
+
+- **Lower values (0.3-0.5)**: More deterministic, less variation
+- **Default (0.667)**: Balanced naturalness and variation
+- **Higher values (0.8-1.0)**: More variation, potentially less stable
+
+### Speaking Rate
+
+Adjust the speed of generated speech:
+
+```bash
+python3 -m matcha.onnx.infer model.onnx --text "Hello" --speaking-rate 0.9
+```
+
+- **< 1.0**: Faster speech
+- **1.0**: Normal speed
+- **> 1.0**: Slower speech
+
+<Note>
+The speaking rate parameter works inversely: higher values result in slower speech.
+</Note>
+
+## GPU Inference
+
+For faster inference on GPU:
+
+```bash
+python3 -m matcha.onnx.infer model.onnx \
+  --text "Hello, world!" \
+  --output-dir ./outputs \
+  --gpu
+```
+
+The inference script (matcha/onnx/infer.py:121-125) uses:
+- `GPUExecutionProvider` when `--gpu` is specified
+- `CPUExecutionProvider` by default
+
+## Output Formats
+
+### With Embedded Vocoder
+
+If the ONNX model has an embedded vocoder, waveforms are generated directly:
+
+```bash
+python3 -m matcha.onnx.infer model_with_vocoder.onnx --text "Hello"
+```
+
+**Output:**
+- `output_1.wav`, `output_2.wav`, etc. (PCM 24-bit, 22,050 Hz)
+
+### Without Embedded Vocoder
+
+If the model only contains Matcha-TTS:
+
+```bash
+python3 -m matcha.onnx.infer model.onnx --text "Hello"
+```
+
+**Output:**
+- `output_1.npy` - Mel-spectrogram as NumPy array
+- `output_1.png` - Mel-spectrogram visualization
+
+### Using External Vocoder
+
+Run full TTS pipeline with an external ONNX vocoder:
+
+```bash
+python3 -m matcha.onnx.infer model.onnx \
+  --text "Hello" \
+  --vocoder hifigan.onnx \
+  --output-dir ./outputs
+```
+
+**Output:**
+- `output_1.wav`, `output_2.wav`, etc.
+
+## Multi-Speaker Inference
+
+For multi-speaker models, specify the speaker ID:
+
+```bash
+python3 -m matcha.onnx.infer model.onnx \
+  --text "Hello" \
+  --spk 5 \
+  --output-dir ./outputs
+```
+
+<Warning>
+If the model is multi-speaker and no speaker ID is provided, speaker ID 0 will be used by default (matcha/onnx/infer.py:148-152).
+</Warning>
+
+See the [Multi-Speaker Setup](/advanced/multi-speaker) guide for available speaker IDs.
+
+## Performance Metrics
+
+The inference script automatically reports:
+
+- **Inference seconds**: Total time for generation
+- **Generated audio seconds**: Duration of output audio
+- **RTF (Real-Time Factor)**: Ratio of inference time to audio duration
+  - RTF < 1.0: Faster than real-time
+  - RTF = 1.0: Real-time
+  - RTF > 1.0: Slower than real-time
+
+Example output (matcha/onnx/infer.py:54-63):
+```
+Inference seconds: 0.234
+Generated wav seconds: 2.5
+Overall RTF: 0.094
+```
+
+## Complete Example
+
+Full synthesis with all parameters:
+
+```bash
+python3 -m matcha.onnx.infer matcha_vctk.onnx \
+  --text "The quick brown fox jumps over the lazy dog." \
+  --spk 10 \
+  --temperature 0.667 \
+  --speaking-rate 0.95 \
+  --gpu \
+  --output-dir ./outputs
+```
+
+## Batch Processing
+
+Process multiple lines from a file:
+
+```bash
+# Create a text file with multiple lines
+echo -e "First sentence.\nSecond sentence.\nThird sentence." > input.txt
+
+# Run inference
+python3 -m matcha.onnx.infer model.onnx --file input.txt --output-dir ./outputs
+```
+
+**Output:**
+- `output_1.wav` - First sentence
+- `output_2.wav` - Second sentence
+- `output_3.wav` - Third sentence
+
+## Implementation Details
+
+The inference process (matcha/onnx/infer.py:24-64):
+
+1. Loads the ONNX model with specified execution provider
+2. Processes input text to phoneme sequences
+3. Pads sequences for batching
+4. Runs ONNX inference
+5. Optionally runs external vocoder
+6. Writes output files and reports performance metrics
+
+## Troubleshooting
+
+### GPU Not Being Used
+
+Ensure:
+1. `onnxruntime-gpu` is installed
+2. CUDA is properly configured
+3. `--gpu` flag is passed to the command
+
+### Speaker ID Error
+
+For multi-speaker models, ensure the speaker ID is within the valid range:
+- VCTK model: 0-107
+
+### Memory Issues
+
+For large batch processing, reduce the number of sentences per run or use CPU inference.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="ONNX Export" icon="download" href="/advanced/onnx-export">
+    Learn how to export models to ONNX
+  </Card>
+  <Card title="Pre-trained Models" icon="box" href="/advanced/pretrained-models">
+    Download and use pre-trained checkpoints
+  </Card>
+</CardGroup>

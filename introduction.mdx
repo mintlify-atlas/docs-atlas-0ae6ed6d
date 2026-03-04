@@ -1,0 +1,137 @@
+---
+title: Introduction
+description: A fast TTS architecture with conditional flow matching for high-quality speech synthesis
+---
+
+# Matcha-TTS
+
+Matcha-TTS is a fast, high-quality text-to-speech (TTS) system that uses conditional flow matching to generate natural-sounding speech. Published at ICASSP 2024, it represents a new approach to non-autoregressive neural TTS.
+
+<Note>
+  Check out the [demo page](https://shivammehta25.github.io/Matcha-TTS) to hear Matcha-TTS in action, or try it in your browser on [HuggingFace Spaces](https://huggingface.co/spaces/shivammehta25/Matcha-TTS).
+</Note>
+
+## What is Matcha-TTS?
+
+Matcha-TTS uses [conditional flow matching](https://arxiv.org/abs/2210.02747) (similar to [rectified flows](https://arxiv.org/abs/2209.03003)) to speed up ODE-based speech synthesis. It's designed as an encoder-decoder architecture trained using optimal-transport conditional flow matching (OT-CFM), yielding an ODE-based decoder capable of high output quality in fewer synthesis steps than models trained using score matching.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Probabilistic" icon="dice">
+    Uses stochastic modeling for natural speech variation
+  </Card>
+  <Card title="Compact Memory" icon="microchip">
+    Smallest memory footprint among comparable models
+  </Card>
+  <Card title="Highly Natural" icon="waveform-lines">
+    Achieves highest mean opinion scores in listening tests
+  </Card>
+  <Card title="Very Fast" icon="bolt">
+    Rivals the speed of the fastest models on long utterances
+  </Card>
+</CardGroup>
+
+### Additional Capabilities
+
+- **Non-autoregressive**: Generates speech in parallel for faster synthesis
+- **No external alignments needed**: Learns to speak from scratch
+- **Multi-speaker support**: Pre-trained models available for both single and multi-speaker scenarios
+- **Adjustable parameters**: Control speaking rate, sampling temperature, and ODE solver steps
+
+## Architecture Overview
+
+Matcha-TTS consists of three main components:
+
+### Text Encoder
+
+The text encoder processes phoneme sequences and predicts durations. It supports:
+- Speaker embeddings for multi-speaker models
+- Duration prediction for alignment learning
+- Flexible encoder architectures (Transformer-based)
+
+### Conditional Flow Matching (CFM) Decoder
+
+The decoder uses conditional flow matching to transform noise into mel-spectrograms:
+- Uses ODE-based synthesis with configurable timesteps
+- Employs optimal transport for efficient training
+- Generates high-quality mel-spectrograms with few steps (as low as 2-4 steps)
+
+### Vocoder
+
+Matcha-TTS uses HiFi-GAN vocoders to convert mel-spectrograms to audio:
+- `hifigan_T2_v1`: Optimized for single-speaker (LJSpeech) models
+- `hifigan_univ_v1`: Universal vocoder for multi-speaker (VCTK) models
+
+<Note>
+  Pre-trained models are automatically downloaded when using the CLI or Gradio interface.
+</Note>
+
+## Model Architecture Details
+
+```python
+class MatchaTTS(BaseLightningClass):
+    def __init__(
+        self,
+        n_vocab,        # Vocabulary size
+        n_spks,         # Number of speakers
+        spk_emb_dim,    # Speaker embedding dimension
+        n_feats,        # Number of mel-spectrogram features
+        encoder,        # Text encoder configuration
+        decoder,        # Decoder configuration
+        cfm,            # Conditional flow matching params
+        data_statistics,# Dataset normalization statistics
+        out_size,       # Output size
+        optimizer=None,
+        scheduler=None,
+        prior_loss=True,
+        use_precomputed_durations=False,
+    ):
+```
+
+The model has approximately **18.2 million parameters** for the base configuration.
+
+## Performance
+
+Matcha-TTS achieves impressive real-time factors (RTF):
+
+- **Matcha-TTS only**: RTF ~0.017 (58x faster than real-time)
+- **With HiFi-GAN vocoder**: RTF ~0.021 (47x faster than real-time)
+
+With as few as **10 ODE steps**, Matcha-TTS produces high-quality speech that rivals models requiring many more steps.
+
+<Warning>
+  RTF values depend on hardware. The values above are representative and may vary based on your GPU/CPU configuration.
+</Warning>
+
+## Use Cases
+
+- **Audiobook narration**: Fast, natural-sounding long-form content
+- **Voice assistants**: Low-latency speech synthesis
+- **Content creation**: Multi-speaker voice generation
+- **Accessibility tools**: Text-to-speech for screen readers
+- **Research**: Baseline for TTS research and experimentation
+
+## Citation
+
+If you use Matcha-TTS in your research, please cite:
+
+```bibtex
+@inproceedings{mehta2024matcha,
+  title={Matcha-{TTS}: A fast {TTS} architecture with conditional flow matching},
+  author={Mehta, Shivam and Tu, Ruibo and Beskow, Jonas and Sz{\'e}kely, {\'E}va and Henter, Gustav Eje},
+  booktitle={Proc. ICASSP},
+  year={2024}
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Matcha-TTS via pip or from source
+  </Card>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Start synthesizing speech in minutes
+  </Card>
+</CardGroup>

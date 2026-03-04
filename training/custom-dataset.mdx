@@ -1,0 +1,373 @@
+---
+title: Custom Dataset
+description: Guide to training Matcha-TTS on your own custom dataset
+---
+
+This guide shows you how to train Matcha-TTS on your own custom dataset beyond the standard LJSpeech or VCTK datasets.
+
+## Overview
+
+Training on a custom dataset involves:
+
+1. Preparing your audio data and transcriptions
+2. Creating a dataset configuration file
+3. Computing normalization statistics
+4. Training the model
+
+## Creating a Custom Dataset Config
+
+<Steps>
+  <Step title="Create config file">
+    Create a new YAML file in `configs/data/` for your dataset:
+
+    ```bash
+    touch configs/data/my_dataset.yaml
+    ```
+  </Step>
+
+  <Step title="Define dataset configuration">
+    Edit `configs/data/my_dataset.yaml` with your dataset parameters:
+
+    ```yaml
+    _target_: matcha.data.text_mel_datamodule.TextMelDataModule
+    name: my_dataset
+    train_filelist_path: data/MyDataset/train.txt
+    valid_filelist_path: data/MyDataset/val.txt
+    batch_size: 32
+    num_workers: 8
+    pin_memory: True
+    cleaners: [english_cleaners2]  # Or your custom cleaner
+    add_blank: True
+    n_spks: 1  # Set to >1 for multi-speaker
+    
+    # Audio parameters
+    n_fft: 1024
+    n_feats: 80
+    sample_rate: 22050  # Match your audio sample rate
+    hop_length: 256
+    win_length: 1024
+    f_min: 0
+    f_max: 8000
+    
+    # Data statistics (compute these in step 3)
+    data_statistics:
+      mel_mean: 0.0  # Replace with computed values
+      mel_std: 1.0   # Replace with computed values
+    
+    seed: ${seed}
+    load_durations: false
+    ```
+  </Step>
+
+  <Step title="Adjust audio parameters">
+    <Warning>
+      The `sample_rate` must match your audio files. If your audio is 16kHz, set `sample_rate: 16000` and adjust `f_max` accordingly (typically `sample_rate / 2`).
+    </Warning>
+
+    Common configurations:
+
+    **For 22.05 kHz audio (LJSpeech standard):**
+    ```yaml
+    sample_rate: 22050
+    hop_length: 256
+    win_length: 1024
+    f_max: 8000
+    ```
+
+    **For 16 kHz audio:**
+    ```yaml
+    sample_rate: 16000
+    hop_length: 200
+    win_length: 800
+    f_max: 8000
+    ```
+
+    **For 24 kHz audio:**
+    ```yaml
+    sample_rate: 24000
+    hop_length: 300
+    win_length: 1200
+    f_max: 12000
+    ```
+  </Step>
+</Steps>
+
+## Computing Dataset Statistics
+
+Normalization statistics are critical for training stability.
+
+<Steps>
+  <Step title="Run statistics computation">
+    Use the `matcha-data-stats` command:
+
+    ```bash
+    matcha-data-stats -i my_dataset.yaml
+    ```
+
+    This computes the mean and standard deviation of mel-spectrograms across your entire training set.
+  </Step>
+
+  <Step title="Update configuration">
+    The command outputs statistics like:
+    ```
+    {'mel_mean': -5.234567, 'mel_std': 2.345678}
+    ```
+
+    Update `configs/data/my_dataset.yaml`:
+    ```yaml
+    data_statistics:
+      mel_mean: -5.234567
+      mel_std: 2.345678
+    ```
+  </Step>
+
+  <Step title="Verify computation">
+    The statistics should be:
+    - `mel_mean`: Typically between -7 and -4
+    - `mel_std`: Typically between 1.5 and 3.0
+
+    If values are very different, verify:
+    - Audio files are correctly formatted
+    - Sample rate matches configuration
+    - File paths in filelists are correct
+  </Step>
+</Steps>
+
+## Creating an Experiment Configuration
+
+Create an experiment config to easily run training:
+
+<Steps>
+  <Step title="Create experiment file">
+    Create `configs/experiment/my_dataset.yaml`:
+
+    ```yaml
+    # @package _global_
+    
+    defaults:
+      - override /data: my_dataset.yaml
+    
+    tags: ["my_dataset", "custom"]
+    
+    run_name: my_dataset_experiment
+    
+    # Optional: override any parameters
+    # data:
+    #   batch_size: 16
+    # 
+    # model:
+    #   out_size: 172  # For memory-constrained training
+    ```
+  </Step>
+
+  <Step title="Train with experiment config">
+    ```bash
+    python matcha/train.py experiment=my_dataset
+    ```
+  </Step>
+</Steps>
+
+## Multi-Speaker Custom Dataset
+
+For a custom multi-speaker dataset:
+
+<Steps>
+  <Step title="Prepare multi-speaker filelists">
+    Format: `path|speaker_id|text`
+
+    ```text
+    data/MyDataset/speaker001/audio001.wav|0|First speaker text
+    data/MyDataset/speaker002/audio001.wav|1|Second speaker text
+    data/MyDataset/speaker001/audio002.wav|0|More from first speaker
+    ```
+
+    Speaker IDs should be:
+    - Consecutive integers starting from 0
+    - Consistent across train and validation sets
+  </Step>
+
+  <Step title="Update config with speaker count">
+    In `configs/data/my_dataset.yaml`:
+
+    ```yaml
+    n_spks: 10  # Replace with your actual speaker count
+    ```
+  </Step>
+
+  <Step title="Configure speaker embeddings">
+    In your experiment config, you can adjust speaker embedding size:
+
+    ```yaml
+    model:
+      spk_emb_dim: 64  # Higher for more speakers (e.g., 128 for 100+ speakers)
+    ```
+  </Step>
+</Steps>
+
+## Using Custom Text Cleaners
+
+If your dataset uses a different language or requires special preprocessing:
+
+<Steps>
+  <Step title="Create custom cleaner">
+    Add a new cleaner function in `matcha/text/cleaners.py`:
+
+    ```python
+    def my_custom_cleaner(text):
+        """Custom text cleaning pipeline."""
+        text = text.lower()
+        # Add your custom preprocessing
+        return text
+    ```
+  </Step>
+
+  <Step title="Register the cleaner">
+    Make sure it's imported and available in the cleaners module.
+  </Step>
+
+  <Step title="Use in config">
+    Update `configs/data/my_dataset.yaml`:
+
+    ```yaml
+    cleaners: [my_custom_cleaner]
+    ```
+  </Step>
+</Steps>
+
+## Example: Non-English Dataset
+
+For a German language dataset:
+
+```yaml
+# configs/data/german_dataset.yaml
+_target_: matcha.data.text_mel_datamodule.TextMelDataModule
+name: german_tts
+train_filelist_path: data/GermanTTS/train.txt
+valid_filelist_path: data/GermanTTS/val.txt
+batch_size: 32
+num_workers: 8
+pin_memory: True
+cleaners: [basic_cleaners]  # Use basic or create German-specific cleaner
+add_blank: True
+n_spks: 1
+
+n_fft: 1024
+n_feats: 80
+sample_rate: 22050
+hop_length: 256
+win_length: 1024
+f_min: 0
+f_max: 8000
+
+data_statistics:
+  mel_mean: -5.123456  # Computed from your dataset
+  mel_std: 2.234567
+
+seed: ${seed}
+load_durations: false
+```
+
+## Dealing with Long Audio Files
+
+For datasets with very long audio files:
+
+<Warning>
+  Very long audio files (>10 seconds) can cause memory issues during training. Consider splitting them into shorter segments.
+</Warning>
+
+1. **Split long files** into 2-10 second segments
+2. **Update filelists** to reference the segmented files
+3. **Adjust batch size** based on average audio length
+
+## Small Dataset Considerations
+
+For small datasets (less than 1000 utterances):
+
+- Reduce batch size to increase gradient updates per epoch
+- Enable pre-computed durations to help the model learn alignments
+- Consider augmentation techniques
+- Monitor for overfitting
+
+```yaml
+data:
+  batch_size: 8  # Smaller batch for more frequent updates
+  
+trainer:
+  max_epochs: 2000  # More epochs for small datasets
+```
+
+## Validation Tips
+
+<Steps>
+  <Step title="Verify file paths">
+    Check that all audio files referenced in filelists exist:
+
+    ```bash
+    # Quick validation script
+    while IFS='|' read -r path text; do
+      if [ ! -f "$path" ]; then
+        echo "Missing: $path"
+      fi
+    done < data/MyDataset/train.txt
+    ```
+  </Step>
+
+  <Step title="Check audio format">
+    Verify sample rate consistency:
+
+    ```bash
+    # Check sample rates
+    soxi -r data/MyDataset/wavs/*.wav | sort -u
+    ```
+
+    Should output only one sample rate.
+  </Step>
+
+  <Step title="Test data loading">
+    Before full training, test that data loads correctly:
+
+    ```python
+    from matcha.data.text_mel_datamodule import TextMelDataModule
+    from hydra import compose, initialize
+    
+    with initialize(version_base="1.3", config_path="../configs/data"):
+        cfg = compose(config_name="my_dataset.yaml")
+    
+    dm = TextMelDataModule(**cfg)
+    dm.setup()
+    batch = next(iter(dm.train_dataloader()))
+    print(f"Batch shape: {batch['x'].shape}, {batch['y'].shape}")
+    ```
+  </Step>
+</Steps>
+
+## Complete Example Workflow
+
+```bash
+# 1. Prepare your dataset structure
+mkdir -p data/MyDataset/wavs
+# ... copy audio files and create filelists ...
+
+# 2. Create dataset config
+cp configs/data/ljspeech.yaml configs/data/my_dataset.yaml
+# ... edit my_dataset.yaml with your paths and parameters ...
+
+# 3. Compute statistics
+matcha-data-stats -i my_dataset.yaml
+
+# 4. Update config with statistics
+# ... edit configs/data/my_dataset.yaml ...
+
+# 5. Create experiment config
+cp configs/experiment/ljspeech.yaml configs/experiment/my_dataset.yaml
+# ... edit to reference your dataset ...
+
+# 6. Start training
+python matcha/train.py experiment=my_dataset
+```
+
+## Next Steps
+
+- [Configure advanced training options](/training/configuration)
+- [Extract durations for faster training](/training/duration-extraction)
+- [Monitor and optimize training](/training/training-guide#monitoring-training)

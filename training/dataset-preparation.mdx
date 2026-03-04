@@ -1,0 +1,220 @@
+---
+title: Dataset Preparation
+description: Learn how to prepare your dataset for training Matcha-TTS models
+---
+
+Matcha-TTS expects audio datasets in a specific format for training. This guide covers the dataset structure requirements and how to prepare your data.
+
+## Dataset Structure
+
+Matcha-TTS follows the LJSpeech dataset format. Your dataset should be structured as:
+
+```bash
+data/
+└── YourDataset-1.0
+    ├── metadata.csv
+    ├── train.txt
+    ├── val.txt
+    ├── test.txt (optional)
+    └── wavs/
+        ├── audio001.wav
+        ├── audio002.wav
+        └── ...
+```
+
+## Filelist Format
+
+### Single-Speaker Datasets
+
+For single-speaker datasets (like LJSpeech), create filelist files with the following format:
+
+```text
+path/to/audio.wav|Transcription text here
+path/to/audio2.wav|Another transcription
+```
+
+Each line contains:
+- Audio file path (relative or absolute)
+- Pipe separator `|`
+- Text transcription
+
+**Example (`train.txt`):**
+```text
+data/LJSpeech-1.1/wavs/LJ001-0001.wav|Printing, in the only sense with which we are at present concerned.
+data/LJSpeech-1.1/wavs/LJ001-0002.wav|differs from most if not from all the arts and crafts.
+```
+
+### Multi-Speaker Datasets
+
+For multi-speaker datasets (like VCTK), add a speaker ID between the path and text:
+
+```text
+path/to/audio.wav|speaker_id|Transcription text here
+```
+
+Each line contains:
+- Audio file path
+- Pipe separator `|`
+- Speaker ID (integer)
+- Pipe separator `|`
+- Text transcription
+
+**Example:**
+```text
+data/vctk/wav48/p225/p225_001.wav|0|Please call Stella.
+data/vctk/wav48/p226/p226_001.wav|1|Please call Stella.
+```
+
+## Audio Requirements
+
+Your audio files must meet these specifications:
+
+<Warning>
+  All audio files must have the same sample rate as specified in your configuration file (default: 22050 Hz).
+</Warning>
+
+- **Format:** WAV (uncompressed PCM)
+- **Sample Rate:** 22050 Hz (configurable)
+- **Channels:** Mono (single channel)
+- **Bit Depth:** 16-bit recommended
+
+## Preparing LJSpeech Dataset
+
+<Steps>
+  <Step title="Download the dataset">
+    Download LJSpeech from the [official website](https://keithito.com/LJ-Speech-Dataset/).
+
+    ```bash
+    wget https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2
+    ```
+  </Step>
+
+  <Step title="Extract the archive">
+    Extract to your data directory:
+
+    ```bash
+    tar -xjf LJSpeech-1.1.tar.bz2 -C data/
+    ```
+
+    This creates `data/LJSpeech-1.1/` with the required structure.
+  </Step>
+
+  <Step title="Create train/val splits">
+    Split `metadata.csv` into training and validation sets. The LJSpeech dataset contains 13,100 audio clips.
+
+    You can use the NVIDIA Tacotron 2 repository's file lists as described in [item 5 of their setup guide](https://github.com/NVIDIA/tacotron2#setup), or create your own:
+
+    ```python
+    # Example Python script to create splits
+    import random
+    
+    with open('data/LJSpeech-1.1/metadata.csv', 'r') as f:
+        lines = f.readlines()
+    
+    random.shuffle(lines)
+    split_idx = int(len(lines) * 0.95)  # 95% train, 5% val
+    
+    # Convert format: LJ001-0001|text|normalized -> path|text
+    train_lines = [f"data/LJSpeech-1.1/wavs/{line.split('|')[0]}.wav|{line.split('|')[1]}\n" 
+                   for line in lines[:split_idx]]
+    val_lines = [f"data/LJSpeech-1.1/wavs/{line.split('|')[0]}.wav|{line.split('|')[1]}\n" 
+                 for line in lines[split_idx:]]
+    
+    with open('data/LJSpeech-1.1/train.txt', 'w') as f:
+        f.writelines(train_lines)
+    
+    with open('data/LJSpeech-1.1/val.txt', 'w') as f:
+        f.writelines(val_lines)
+    ```
+  </Step>
+
+  <Step title="Verify the structure">
+    Ensure your directory looks like:
+
+    ```bash
+    data/LJSpeech-1.1/
+    ├── metadata.csv
+    ├── README
+    ├── train.txt       # Your training filelist
+    ├── val.txt         # Your validation filelist
+    └── wavs/
+        ├── LJ001-0001.wav
+        ├── LJ001-0002.wav
+        └── ... (13,100 files)
+    ```
+  </Step>
+</Steps>
+
+## Preparing Custom Datasets
+
+<Steps>
+  <Step title="Organize audio files">
+    Place all audio files in a `wavs/` directory or similar structure.
+  </Step>
+
+  <Step title="Create transcriptions">
+    Create filelist files (`train.txt`, `val.txt`) with audio paths and transcriptions in the format described above.
+  </Step>
+
+  <Step title="Verify audio format">
+    Ensure all audio files are:
+    - WAV format
+    - Same sample rate (e.g., 22050 Hz)
+    - Mono channel
+
+    You can use `sox` or `ffmpeg` to convert:
+
+    ```bash
+    # Convert all files to 22050 Hz mono WAV
+    for file in wavs/*.wav; do
+      ffmpeg -i "$file" -ar 22050 -ac 1 "converted/$file"
+    done
+    ```
+  </Step>
+
+  <Step title="Split data">
+    Create separate train/validation splits. A typical split is 95% training, 5% validation.
+
+    <Warning>
+      Ensure no overlap between training and validation sets to avoid data leakage.
+    </Warning>
+  </Step>
+</Steps>
+
+## Text Preprocessing
+
+Matcha-TTS includes several text cleaners for preprocessing:
+
+- `english_cleaners` - Basic English text cleaning
+- `english_cleaners2` - Advanced English cleaning (recommended for LJSpeech)
+
+The cleaners handle:
+- Number expansion ("123" → "one hundred twenty three")
+- Abbreviation expansion ("Dr." → "Doctor")
+- Lowercase conversion
+- Punctuation normalization
+
+Text cleaning is configured in your dataset YAML file:
+
+```yaml
+cleaners: [english_cleaners2]
+```
+
+## Validation Checklist
+
+Before training, verify:
+
+- [ ] All audio files are in WAV format with correct sample rate
+- [ ] Filelist format matches your speaker configuration (single/multi-speaker)
+- [ ] No missing audio files referenced in filelists
+- [ ] Train/validation splits are created
+- [ ] No overlap between train and validation sets
+- [ ] All transcriptions are accurate
+- [ ] File paths in filelists are correct (relative or absolute)
+
+## Next Steps
+
+Once your dataset is prepared:
+
+1. [Configure your dataset](/training/configuration) for training
+2. Follow the [Training Guide](/training/training-guide) to start training

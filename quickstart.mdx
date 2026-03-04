@@ -1,80 +1,442 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start
+description: Get started with Matcha-TTS using the CLI, Python API, or Gradio interface
 ---
 
-## Get started in three steps
+# Quick Start
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+This guide will help you start synthesizing speech with Matcha-TTS in minutes. We'll cover three ways to use Matcha-TTS: the command-line interface (CLI), Python API, and web interface.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  Make sure you've [installed Matcha-TTS](/installation) before proceeding. Pre-trained models will be automatically downloaded on first use.
 </Note>
+
+## CLI Usage
+
+The command-line interface is the fastest way to synthesize speech from text.
+
+### Basic Synthesis
+
+Synthesize a single utterance:
+
+```bash
+matcha-tts --text "Hello, this is Matcha TTS speaking."
+```
+
+This generates `utterance_001.wav` in your current directory.
+
+### Synthesize from File
+
+Create a text file with one sentence per line:
+
+```bash
+matcha-tts --file sentences.txt
+```
+
+Each line will be synthesized as a separate audio file.
+
+### Batch Processing
+
+For faster processing of multiple sentences, use batch mode:
+
+```bash
+matcha-tts --file sentences.txt --batched --batch_size 32
+```
+
+<Note>
+  Batched processing is significantly faster when synthesizing many sentences, especially on GPU.
+</Note>
+
+### CLI Parameters
+
+<ParamField path="--text" type="string">
+  Text to synthesize (alternative to --file)
+</ParamField>
+
+<ParamField path="--file" type="string">
+  Path to text file with one sentence per line
+</ParamField>
+
+<ParamField path="--model" type="string" default="matcha_ljspeech">
+  Model to use: `matcha_ljspeech` (single speaker) or `matcha_vctk` (multi-speaker)
+</ParamField>
+
+<ParamField path="--checkpoint_path" type="string">
+  Path to custom model checkpoint (optional)
+</ParamField>
+
+<ParamField path="--vocoder" type="string">
+  Vocoder to use: `hifigan_T2_v1` or `hifigan_univ_v1` (auto-selected based on model)
+</ParamField>
+
+<ParamField path="--speaking_rate" type="float" default="0.95">
+  Speaking rate control (higher = slower). Default: 0.95 for LJSpeech, 0.85 for VCTK
+</ParamField>
+
+<ParamField path="--temperature" type="float" default="0.667">
+  Sampling temperature for variation (higher = more variation)
+</ParamField>
+
+<ParamField path="--steps" type="int" default="10">
+  Number of ODE solver steps (2-100). Fewer steps = faster but potentially lower quality
+</ParamField>
+
+<ParamField path="--spk" type="int">
+  Speaker ID for multi-speaker models (0-107 for VCTK)
+</ParamField>
+
+<ParamField path="--output_folder" type="string">
+  Directory to save output files (default: current directory)
+</ParamField>
+
+<ParamField path="--cpu" type="boolean">
+  Force CPU inference (default: use GPU if available)
+</ParamField>
+
+<ParamField path="--batched" type="boolean">
+  Enable batch processing mode
+</ParamField>
+
+<ParamField path="--batch_size" type="int" default="32">
+  Batch size for batch mode
+</ParamField>
+
+### Advanced CLI Examples
+
+<CodeGroup>
+```bash Adjust Speaking Rate
+# Slower speech (1.2x slower)
+matcha-tts --text "Speak slowly and clearly." --speaking_rate 1.2
+
+# Faster speech (0.8x normal speed)
+matcha-tts --text "Speak quickly!" --speaking_rate 0.8
+```
+
+```bash Control Quality vs Speed
+# Ultra-fast (2 steps)
+matcha-tts --text "Fast synthesis." --steps 2
+
+# High quality (50 steps)
+matcha-tts --text "High quality synthesis." --steps 50
+
+# Balanced (default: 10 steps)
+matcha-tts --text "Balanced synthesis." --steps 10
+```
+
+```bash Multi-Speaker Synthesis
+# Use VCTK multi-speaker model with speaker 16
+matcha-tts --model matcha_vctk --spk 16 \
+  --text "Hello from speaker sixteen."
+
+# Try different speakers
+matcha-tts --model matcha_vctk --spk 44 \
+  --text "Hello from speaker forty four."
+```
+
+```bash Custom Output Location
+matcha-tts --text "Save me elsewhere." \
+  --output_folder ./my_speech_outputs
+```
+
+```bash Custom Model
+matcha-tts --text "Using my custom model." \
+  --checkpoint_path ./my_model.ckpt \
+  --vocoder hifigan_univ_v1
+```
+</CodeGroup>
+
+## Python API
+
+Use Matcha-TTS directly in your Python code for more control.
+
+### Basic Python Example
+
+```python
+import torch
+import soundfile as sf
+from matcha.models.matcha_tts import MatchaTTS
+from matcha.text import text_to_sequence
+from matcha.utils.utils import intersperse
+from matcha.hifigan.config import v1
+from matcha.hifigan.models import Generator as HiFiGAN
+from matcha.hifigan.env import AttrDict
+from matcha.hifigan.denoiser import Denoiser
+
+# Set device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Load Matcha-TTS model
+model = MatchaTTS.load_from_checkpoint(
+    "path/to/matcha_ljspeech.ckpt", 
+    map_location=device
+)
+model.eval()
+
+# Load vocoder (HiFi-GAN)
+h = AttrDict(v1)
+vocoder = HiFiGAN(h).to(device)
+vocoder.load_state_dict(
+    torch.load("path/to/hifigan_T2_v1", map_location=device)["generator"]
+)
+vocoder.eval()
+vocoder.remove_weight_norm()
+denoiser = Denoiser(vocoder, mode="zeros")
+
+# Prepare text
+text = "Hello, this is Matcha TTS."
+x = torch.tensor(
+    intersperse(text_to_sequence(text, ["english_cleaners2"])[0], 0),
+    dtype=torch.long,
+    device=device
+)[None]
+x_lengths = torch.tensor([x.shape[-1]], dtype=torch.long, device=device)
+
+# Synthesize
+with torch.inference_mode():
+    output = model.synthesise(
+        x,
+        x_lengths,
+        n_timesteps=10,
+        temperature=0.667,
+        spks=None,
+        length_scale=1.0
+    )
+    
+    # Generate waveform
+    audio = vocoder(output["mel"]).clamp(-1, 1)
+    audio = denoiser(audio.squeeze(), strength=0.00025).cpu().squeeze()
+
+# Save audio
+sf.write("output.wav", audio.numpy(), 22050, "PCM_24")
+
+print(f"Real-time factor: {output['rtf']:.4f}")
+```
+
+### Synthesis Function Parameters
+
+The `synthesise()` method accepts the following parameters:
+
+<ParamField path="x" type="torch.Tensor">
+  Batch of phoneme sequences. Shape: `(batch_size, max_text_length)`
+</ParamField>
+
+<ParamField path="x_lengths" type="torch.Tensor">
+  Lengths of each sequence in the batch. Shape: `(batch_size,)`
+</ParamField>
+
+<ParamField path="n_timesteps" type="int">
+  Number of ODE solver steps (2-100)
+</ParamField>
+
+<ParamField path="temperature" type="float" default="1.0">
+  Controls variance of terminal distribution
+</ParamField>
+
+<ParamField path="spks" type="torch.Tensor" optional>
+  Speaker IDs for multi-speaker models. Shape: `(batch_size,)`
+</ParamField>
+
+<ParamField path="length_scale" type="float" default="1.0">
+  Controls speech pace (higher = slower)
+</ParamField>
+
+### Helper Functions
+
+```python
+@torch.inference_mode()
+def process_text(text: str, device):
+    """Convert text to phoneme tensor."""
+    x = torch.tensor(
+        intersperse(text_to_sequence(text, ["english_cleaners2"])[0], 0),
+        dtype=torch.long,
+        device=device
+    )[None]
+    x_lengths = torch.tensor([x.shape[-1]], dtype=torch.long, device=device)
+    return x, x_lengths
+
+@torch.inference_mode()
+def to_waveform(mel, vocoder, denoiser, strength=0.00025):
+    """Convert mel-spectrogram to waveform."""
+    audio = vocoder(mel).clamp(-1, 1)
+    audio = denoiser(audio.squeeze(), strength=strength).cpu().squeeze()
+    return audio
+```
+
+### Multi-Speaker Example
+
+```python
+# Load VCTK multi-speaker model
+model = MatchaTTS.load_from_checkpoint(
+    "path/to/matcha_vctk.ckpt", 
+    map_location=device
+)
+model.eval()
+
+# Prepare text
+x, x_lengths = process_text("Hello from speaker zero.", device)
+
+# Speaker ID (0-107 for VCTK)
+spk = torch.tensor([0], device=device, dtype=torch.long)
+
+# Synthesize with specific speaker
+with torch.inference_mode():
+    output = model.synthesise(
+        x,
+        x_lengths,
+        n_timesteps=10,
+        temperature=0.667,
+        spks=spk,
+        length_scale=0.85  # VCTK default
+    )
+```
+
+## Gradio Web Interface
+
+Launch an interactive web interface for experimenting with Matcha-TTS:
+
+```bash
+matcha-tts-app
+```
+
+This starts a Gradio interface where you can:
+- Enter text and synthesize instantly
+- Switch between single-speaker and multi-speaker models
+- Adjust hyperparameters in real-time
+- Select different speakers (for VCTK model)
+- Listen to pre-cached examples
+
+<Note>
+  The Gradio app automatically downloads required models on first launch. The interface will be available at `http://localhost:7860` by default.
+</Note>
+
+### Gradio Interface Code
+
+The Gradio app implementation from `matcha/app.py`:
+
+```python
+import gradio as gr
+import torch
+import soundfile as sf
+from matcha.cli import (
+    load_matcha,
+    load_vocoder,
+    process_text,
+    to_waveform,
+)
+
+# Load models
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = load_matcha("matcha_vctk", "path/to/model.ckpt", device)
+vocoder, denoiser = load_vocoder("hifigan_univ_v1", "path/to/vocoder", device)
+
+@torch.inference_mode()
+def synthesise_mel(text, text_length, n_timesteps, temperature, length_scale, spk):
+    spk = torch.tensor([spk], device=device, dtype=torch.long) if spk >= 0 else None
+    output = model.synthesise(
+        text,
+        text_length,
+        n_timesteps=n_timesteps,
+        temperature=temperature,
+        spks=spk,
+        length_scale=length_scale,
+    )
+    output["waveform"] = to_waveform(output["mel"], vocoder, denoiser)
+    return output["waveform"], output["mel"]
+```
+
+## Jupyter Notebook
+
+Matcha-TTS includes a Jupyter notebook (`synthesis.ipynb`) for interactive experimentation:
+
+```python
+# From synthesis.ipynb
+import datetime as dt
+import IPython.display as ipd
+import numpy as np
+from tqdm.auto import tqdm
+
+# Configuration
+n_timesteps = 10
+length_scale = 1.0
+temperature = 0.667
+
+# Synthesize and display
+texts = [
+    "The Secret Service believed that it was very doubtful that any "
+    "President would ride regularly in a vehicle with a fixed top, "
+    "even though transparent."
+]
+
+for i, text in enumerate(tqdm(texts)):
+    output = synthesise(text)
+    output['waveform'] = to_waveform(output['mel'], vocoder)
+    
+    # Calculate RTF
+    t = (dt.datetime.now() - output['start_t']).total_seconds()
+    rtf_w = t * 22050 / (output['waveform'].shape[-1])
+    
+    print(f"RTF: {output['rtf']:.6f}")
+    print(f"RTF Waveform: {rtf_w:.6f}")
+    
+    # Display audio in notebook
+    ipd.display(ipd.Audio(output['waveform'], rate=22050))
+    
+    # Save to file
+    save_to_folder(i, output, "synth_output")
+```
+
+## Performance Tips
+
+<AccordionGroup>
+  <Accordion title="Choosing the right number of steps">
+    - **2-4 steps**: Ultra-fast, slight quality reduction
+    - **10 steps** (default): Good balance of speed and quality
+    - **50+ steps**: Highest quality, diminishing returns beyond 50
+  </Accordion>
+
+  <Accordion title="GPU vs CPU">
+    GPU is highly recommended:
+    - **GPU**: RTF ~0.02 (50x real-time)
+    - **CPU**: RTF ~0.5-1.0 (1-2x real-time)
+    
+    Use `--cpu` flag only if GPU is unavailable.
+  </Accordion>
+
+  <Accordion title="Batch processing">
+    For many utterances, use `--batched` mode:
+    ```bash
+    matcha-tts --file large_file.txt --batched --batch_size 32
+    ```
+    This can be 3-5x faster than processing individually.
+  </Accordion>
+
+  <Accordion title="Temperature and variation">
+    - **0.333**: Less variation, more consistent
+    - **0.667** (default): Natural variation
+    - **1.0+**: More variation, potentially less stable
+  </Accordion>
+</AccordionGroup>
+
+## Output Format
+
+Matcha-TTS generates:
+- **Audio files**: `.wav` format, 22050 Hz, PCM_24
+- **Mel-spectrograms**: `.npy` files (NumPy arrays)
+- **Visualizations**: `.png` spectrogram plots (when using CLI)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Training Custom Models" icon="graduation-cap">
+    Learn how to train Matcha-TTS on your own dataset
+  </Card>
+  <Card title="ONNX Export" icon="file-export">
+    Export models to ONNX for deployment
+  </Card>
+  <Card title="API Reference" icon="code">
+    Detailed API documentation
+  </Card>
+  <Card title="Examples" icon="flask">
+    More advanced usage examples
+  </Card>
+</CardGroup>

@@ -1,0 +1,321 @@
+---
+title: Training Guide
+description: Complete guide to training Matcha-TTS models on your dataset
+---
+
+This guide walks you through the complete process of training a Matcha-TTS model from scratch.
+
+## Prerequisites
+
+Before starting, ensure you have:
+
+- Prepared dataset in the [correct format](/training/dataset-preparation)
+- Installed Matcha-TTS from source
+- GPU with sufficient VRAM (8GB minimum, 16GB+ recommended)
+
+## Installation for Training
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/shivammehta25/Matcha-TTS.git
+    cd Matcha-TTS
+    ```
+  </Step>
+
+  <Step title="Create environment">
+    ```bash
+    conda create -n matcha-tts python=3.10 -y
+    conda activate matcha-tts
+    ```
+  </Step>
+
+  <Step title="Install from source">
+    ```bash
+    pip install -e .
+    ```
+  </Step>
+</Steps>
+
+## Training on LJSpeech
+
+This example demonstrates training on the LJSpeech dataset.
+
+<Steps>
+  <Step title="Prepare dataset">
+    Download and prepare LJSpeech as described in the [Dataset Preparation guide](/training/dataset-preparation).
+
+    Your structure should be:
+    ```bash
+    data/LJSpeech-1.1/
+    ├── train.txt
+    ├── val.txt
+    └── wavs/
+    ```
+  </Step>
+
+  <Step title="Update dataset configuration">
+    Edit `configs/data/ljspeech.yaml` to point to your filelist paths:
+
+    ```yaml
+    train_filelist_path: data/LJSpeech-1.1/train.txt
+    valid_filelist_path: data/LJSpeech-1.1/val.txt
+    ```
+  </Step>
+
+  <Step title="Generate normalization statistics">
+    Compute mel-spectrogram mean and standard deviation for your dataset:
+
+    ```bash
+    matcha-data-stats -i ljspeech.yaml
+    ```
+
+    This outputs:
+    ```
+    {'mel_mean': -5.53662231756592, 'mel_std': 2.1161014277038574}
+    ```
+
+    <Warning>
+      This step is crucial for training stability. The statistics are used to normalize mel-spectrograms during training.
+    </Warning>
+  </Step>
+
+  <Step title="Update statistics in config">
+    Add the computed statistics to `configs/data/ljspeech.yaml`:
+
+    ```yaml
+    data_statistics:
+      mel_mean: -5.536622
+      mel_std: 2.116101
+    ```
+  </Step>
+
+  <Step title="Start training">
+    Run training with the LJSpeech experiment configuration:
+
+    ```bash
+    python matcha/train.py experiment=ljspeech
+    ```
+
+    Or using the Makefile:
+    ```bash
+    make train-ljspeech
+    ```
+  </Step>
+</Steps>
+
+## Training Commands
+
+### Basic Training
+
+Train with default settings:
+```bash
+python matcha/train.py experiment=ljspeech
+```
+
+### Multi-GPU Training
+
+Train on multiple GPUs (e.g., GPUs 0 and 1):
+```bash
+python matcha/train.py experiment=ljspeech trainer.devices=[0,1]
+```
+
+### Minimum Memory Mode
+
+For systems with limited GPU memory:
+```bash
+python matcha/train.py experiment=ljspeech_min_memory
+```
+
+This configuration reduces the model size (`out_size: 172`) to fit in smaller GPUs.
+
+### Resume from Checkpoint
+
+Resume training from a saved checkpoint:
+```bash
+python matcha/train.py experiment=ljspeech ckpt_path=/path/to/checkpoint.ckpt
+```
+
+### Override Configuration
+
+You can override any configuration parameter from the command line:
+
+```bash
+# Change batch size
+python matcha/train.py experiment=ljspeech data.batch_size=16
+
+# Change learning rate
+python matcha/train.py experiment=ljspeech model.optimizer.lr=0.0001
+
+# Multiple overrides
+python matcha/train.py experiment=ljspeech \
+  data.batch_size=16 \
+  trainer.max_epochs=1000 \
+  trainer.devices=[0]
+```
+
+## Training Configuration
+
+### Key Hyperparameters
+
+Important parameters in the training configuration:
+
+```yaml
+# Data configuration (configs/data/ljspeech.yaml)
+batch_size: 32          # Batch size per GPU
+num_workers: 20         # Data loading workers
+
+# Audio parameters
+n_fft: 1024            # FFT size
+n_feats: 80            # Mel channels
+sample_rate: 22050     # Audio sample rate
+hop_length: 256        # Hop length for STFT
+win_length: 1024       # Window length for STFT
+
+# Model configuration (configs/model/matcha.yaml)
+n_vocab: 178           # Vocabulary size
+n_spks: 1              # Number of speakers (1 for single-speaker)
+spk_emb_dim: 64        # Speaker embedding dimension
+out_size: null         # Decoder output size (null = auto)
+```
+
+### Training Duration
+
+Training typically requires:
+- **LJSpeech (single-speaker):** ~200-300k steps for good quality
+- **VCTK (multi-speaker):** ~500k+ steps
+- **Time:** Several days on a single GPU
+
+## Monitoring Training
+
+### TensorBoard
+
+By default, training logs are saved with TensorBoard:
+
+```bash
+tensorboard --logdir logs/
+```
+
+Monitor:
+- Training/validation loss
+- Mel-spectrogram predictions
+- Attention alignments
+- Duration predictions
+
+### Checkpoints
+
+Model checkpoints are saved in `logs/train/runs/<timestamp>/checkpoints/`:
+
+- `last.ckpt` - Most recent checkpoint
+- `epoch_*.ckpt` - Periodic checkpoints
+- Best checkpoint based on validation loss
+
+## Multi-Speaker Training
+
+To train a multi-speaker model (e.g., VCTK):
+
+<Steps>
+  <Step title="Prepare multi-speaker dataset">
+    Ensure your filelist includes speaker IDs:
+    ```text
+    data/vctk/wav48/p225/p225_001.wav|0|Transcription here
+    data/vctk/wav48/p226/p226_001.wav|1|Transcription here
+    ```
+  </Step>
+
+  <Step title="Update dataset config">
+    Set the number of speakers in `configs/data/vctk.yaml`:
+    ```yaml
+    n_spks: 109  # Total number of unique speakers
+    ```
+  </Step>
+
+  <Step title="Generate statistics">
+    ```bash
+    matcha-data-stats -i vctk.yaml
+    ```
+  </Step>
+
+  <Step title="Train">
+    ```bash
+    python matcha/train.py experiment=multispeaker
+    ```
+  </Step>
+</Steps>
+
+## Training with Pre-computed Durations
+
+For faster convergence, you can train using pre-extracted phoneme durations:
+
+<Steps>
+  <Step title="Extract durations">
+    First, train a base model, then extract durations as described in the [Duration Extraction guide](/training/duration-extraction).
+  </Step>
+
+  <Step title="Enable duration loading">
+    Set `load_durations: True` in your experiment config:
+
+    ```yaml
+    data:
+      load_durations: True
+      batch_size: 64  # Can use larger batch size
+    ```
+  </Step>
+
+  <Step title="Train">
+    ```bash
+    python matcha/train.py experiment=ljspeech_from_durations
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Out of Memory (OOM) Errors
+
+If you encounter OOM errors:
+
+1. Reduce batch size:
+   ```bash
+   python matcha/train.py experiment=ljspeech data.batch_size=16
+   ```
+
+2. Use minimum memory configuration:
+   ```bash
+   python matcha/train.py experiment=ljspeech_min_memory
+   ```
+
+3. Reduce number of workers:
+   ```bash
+   python matcha/train.py experiment=ljspeech data.num_workers=4
+   ```
+
+### Slow Training
+
+- Increase `num_workers` for faster data loading
+- Enable mixed precision training (enabled by default with Lightning)
+- Use multiple GPUs
+
+### Poor Audio Quality
+
+- Verify dataset statistics are correct
+- Check audio preprocessing (sample rate, normalization)
+- Train for more steps
+- Validate data quality and transcription accuracy
+
+## Synthesis from Trained Model
+
+Once training is complete, synthesize speech from your model:
+
+```bash
+matcha-tts --text "Hello, this is a test." \
+  --checkpoint_path logs/train/runs/<timestamp>/checkpoints/epoch_100.ckpt
+```
+
+For more synthesis options, see the main [Inference documentation](/inference).
+
+## Next Steps
+
+- [Extract phoneme durations](/training/duration-extraction) for improved training
+- [Configure custom datasets](/training/custom-dataset) for your specific needs
+- Learn about [configuration options](/training/configuration) in detail

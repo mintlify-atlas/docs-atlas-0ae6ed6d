@@ -1,0 +1,315 @@
+---
+title: TextEncoder
+description: Transformer-based text encoder with duration prediction
+---
+
+## Overview
+
+The `TextEncoder` encodes input text (phoneme sequences) into latent representations and predicts phoneme durations. It uses a transformer-based architecture with rotary positional embeddings and includes an optional prenet and a duration predictor.
+
+## Class Definition
+
+### TextEncoder
+
+```python
+from matcha.models.components.text_encoder import TextEncoder
+
+encoder = TextEncoder(
+    encoder_type="transformer",
+    encoder_params=encoder_config,
+    duration_predictor_params=duration_config,
+    n_vocab=148,
+    n_spks=1,
+    spk_emb_dim=128
+)
+```
+
+### Constructor Parameters
+
+<ParamField path="encoder_type" type="str" required>
+  Type of encoder architecture (typically "transformer")
+</ParamField>
+
+<ParamField path="encoder_params" type="object" required>
+  Encoder architecture parameters:
+  - `n_feats`: Number of mel features
+  - `n_channels`: Hidden dimension size
+  - `n_heads`: Number of attention heads
+  - `n_layers`: Number of transformer layers
+  - `filter_channels`: Feedforward network dimension
+  - `kernel_size`: Convolution kernel size
+  - `p_dropout`: Dropout probability
+  - `prenet`: Whether to use convolutional prenet
+</ParamField>
+
+<ParamField path="duration_predictor_params" type="object" required>
+  Duration predictor parameters:
+  - `filter_channels_dp`: Filter channels for duration predictor
+  - `kernel_size`: Convolution kernel size
+  - `p_dropout`: Dropout probability
+</ParamField>
+
+<ParamField path="n_vocab" type="int" required>
+  Vocabulary size (number of phoneme symbols)
+</ParamField>
+
+<ParamField path="n_spks" type="int" default="1">
+  Number of speakers
+</ParamField>
+
+<ParamField path="spk_emb_dim" type="int" default="128">
+  Speaker embedding dimension
+</ParamField>
+
+## Methods
+
+### forward()
+
+Runs forward pass through the encoder and duration predictor.
+
+```python
+def forward(
+    x: torch.Tensor,
+    x_lengths: torch.Tensor,
+    spks: torch.Tensor = None
+) -> tuple
+```
+
+#### Parameters
+
+<ParamField path="x" type="torch.Tensor" required>
+  Text input as phoneme IDs
+  
+  **Shape:** `(batch_size, max_text_length)`
+</ParamField>
+
+<ParamField path="x_lengths" type="torch.Tensor" required>
+  Text input lengths
+  
+  **Shape:** `(batch_size,)`
+</ParamField>
+
+<ParamField path="spks" type="torch.Tensor" default="None">
+  Speaker IDs for multi-speaker models
+  
+  **Shape:** `(batch_size,)`
+</ParamField>
+
+#### Returns
+
+<ResponseField name="mu" type="torch.Tensor">
+  Average encoder output (mean latent representation)
+  
+  **Shape:** `(batch_size, n_feats, max_text_length)`
+</ResponseField>
+
+<ResponseField name="logw" type="torch.Tensor">
+  Log-scaled duration predictions
+  
+  **Shape:** `(batch_size, 1, max_text_length)`
+</ResponseField>
+
+<ResponseField name="x_mask" type="torch.Tensor">
+  Mask for the text input
+  
+  **Shape:** `(batch_size, 1, max_text_length)`
+</ResponseField>
+
+## Components
+
+### Encoder
+
+Transformer encoder with multi-head attention and feedforward networks.
+
+```python
+from matcha.models.components.text_encoder import Encoder
+
+encoder = Encoder(
+    hidden_channels=192,
+    filter_channels=768,
+    n_heads=2,
+    n_layers=6,
+    kernel_size=3,
+    p_dropout=0.1
+)
+```
+
+#### Parameters
+
+<ParamField path="hidden_channels" type="int" required>
+  Hidden dimension size
+</ParamField>
+
+<ParamField path="filter_channels" type="int" required>
+  Feedforward network dimension
+</ParamField>
+
+<ParamField path="n_heads" type="int" required>
+  Number of attention heads
+</ParamField>
+
+<ParamField path="n_layers" type="int" required>
+  Number of transformer layers
+</ParamField>
+
+<ParamField path="kernel_size" type="int" default="1">
+  Convolution kernel size in FFN
+</ParamField>
+
+<ParamField path="p_dropout" type="float" default="0.0">
+  Dropout probability
+</ParamField>
+
+### DurationPredictor
+
+Predicts phoneme durations using convolutional layers.
+
+```python
+from matcha.models.components.text_encoder import DurationPredictor
+
+duration_predictor = DurationPredictor(
+    in_channels=192,
+    filter_channels=256,
+    kernel_size=3,
+    p_dropout=0.5
+)
+```
+
+#### Parameters
+
+<ParamField path="in_channels" type="int" required>
+  Input dimension
+</ParamField>
+
+<ParamField path="filter_channels" type="int" required>
+  Number of filter channels
+</ParamField>
+
+<ParamField path="kernel_size" type="int" required>
+  Convolution kernel size
+</ParamField>
+
+<ParamField path="p_dropout" type="float" required>
+  Dropout probability
+</ParamField>
+
+### MultiHeadAttention
+
+Multi-head attention with rotary positional embeddings.
+
+```python
+from matcha.models.components.text_encoder import MultiHeadAttention
+
+attn = MultiHeadAttention(
+    channels=192,
+    out_channels=192,
+    n_heads=2,
+    heads_share=True,
+    p_dropout=0.1,
+    proximal_bias=False,
+    proximal_init=False
+)
+```
+
+#### Parameters
+
+<ParamField path="channels" type="int" required>
+  Input channel dimension
+</ParamField>
+
+<ParamField path="out_channels" type="int" required>
+  Output channel dimension
+</ParamField>
+
+<ParamField path="n_heads" type="int" required>
+  Number of attention heads
+</ParamField>
+
+<ParamField path="heads_share" type="bool" default="True">
+  Whether attention heads share parameters
+</ParamField>
+
+<ParamField path="p_dropout" type="float" default="0.0">
+  Dropout probability
+</ParamField>
+
+<ParamField path="proximal_bias" type="bool" default="False">
+  Use proximal bias in attention
+</ParamField>
+
+<ParamField path="proximal_init" type="bool" default="False">
+  Initialize query and key projections similarly
+</ParamField>
+
+### RotaryPositionalEmbeddings
+
+Rotary positional embeddings (RoPE) for improved position encoding.
+
+```python
+from matcha.models.components.text_encoder import RotaryPositionalEmbeddings
+
+rope = RotaryPositionalEmbeddings(
+    d=64,  # half of the feature dimension
+    base=10000
+)
+```
+
+#### Parameters
+
+<ParamField path="d" type="int" required>
+  Number of features (should be even). Half the actual feature dimension
+</ParamField>
+
+<ParamField path="base" type="int" default="10000">
+  Base value for calculating rotation angles
+</ParamField>
+
+## Example Usage
+
+```python
+import torch
+from matcha.models.components.text_encoder import TextEncoder
+from types import SimpleNamespace
+
+# Configure encoder
+encoder_params = SimpleNamespace(
+    n_feats=80,
+    n_channels=192,
+    n_heads=2,
+    n_layers=6,
+    filter_channels=768,
+    kernel_size=3,
+    p_dropout=0.1,
+    prenet=True
+)
+
+duration_params = SimpleNamespace(
+    filter_channels_dp=256,
+    kernel_size=3,
+    p_dropout=0.5
+)
+
+# Create encoder
+encoder = TextEncoder(
+    encoder_type="transformer",
+    encoder_params=encoder_params,
+    duration_predictor_params=duration_params,
+    n_vocab=148,
+    n_spks=1,
+    spk_emb_dim=128
+)
+
+# Example input
+x = torch.randint(0, 148, (2, 50))  # batch_size=2, max_length=50
+x_lengths = torch.LongTensor([50, 35])
+
+# Forward pass
+mu, logw, x_mask = encoder(x, x_lengths)
+
+print(f"Encoder output shape: {mu.shape}")  # (2, 80, 50)
+print(f"Duration prediction shape: {logw.shape}")  # (2, 1, 50)
+```
+
+## Source Reference
+
+Implementation: `matcha/models/components/text_encoder.py:328`

@@ -1,0 +1,389 @@
+---
+title: Get Durations
+description: Extract phoneme durations from trained models
+---
+
+## Overview
+
+The `matcha-tts-get-durations` utility extracts phoneme durations from a trained Matcha-TTS model using Monotonic Alignment Search (MAS). These durations can be used for training other TTS architectures or analyzing alignment patterns.
+
+## Command Line Interface
+
+### matcha-tts-get-durations
+
+```bash
+matcha-tts-get-durations -c <checkpoint> -i <config> [OPTIONS]
+```
+
+#### Arguments
+
+<ParamField path="-c, --checkpoint_path" type="str" required>
+  Path to the trained Matcha-TTS checkpoint file
+</ParamField>
+
+<ParamField path="-i, --input-config" type="str" default="ljspeech.yaml">
+  Name of the YAML config file under `configs/data/`
+</ParamField>
+
+<ParamField path="-b, --batch-size" type="int" default="32">
+  Batch size for processing (higher = faster but more memory)
+</ParamField>
+
+<ParamField path="-o, --output-folder" type="str" default="None">
+  Output folder for duration files. Defaults to `<data_path>/durations/`
+</ParamField>
+
+<ParamField path="-f, --force" type="flag">
+  Force overwrite existing duration folder
+</ParamField>
+
+<ParamField path="--cpu" type="flag">
+  Use CPU instead of GPU (not recommended, much slower)
+</ParamField>
+
+## Python API
+
+### compute_durations()
+
+Compute durations for all samples in a dataloader.
+
+```python
+from matcha.utils.get_durations_from_trained_model import compute_durations
+
+compute_durations(
+    data_loader=train_loader,
+    model=matcha_model,
+    device=torch.device("cuda"),
+    output_folder=Path("./durations")
+)
+```
+
+#### Parameters
+
+<ParamField path="data_loader" type="torch.utils.data.DataLoader" required>
+  DataLoader containing text and mel-spectrogram pairs
+</ParamField>
+
+<ParamField path="model" type="nn.Module" required>
+  Trained MatchaTTS model
+</ParamField>
+
+<ParamField path="device" type="torch.device" required>
+  Device to run inference on ("cuda" or "cpu")
+</ParamField>
+
+<ParamField path="output_folder" type="Path" required>
+  Directory to save duration files
+</ParamField>
+
+### save_durations_to_folder()
+
+Save durations for a single sample.
+
+```python
+from matcha.utils.get_durations_from_trained_model import save_durations_to_folder
+
+save_durations_to_folder(
+    attn=attention_matrix,
+    x_length=text_length,
+    y_length=mel_length,
+    filepath="LJ001-0001.wav",
+    output_folder=Path("./durations"),
+    text="phoneme_sequence"
+)
+```
+
+#### Parameters
+
+<ParamField path="attn" type="torch.Tensor" required>
+  Attention/alignment matrix from model
+  
+  **Shape:** `(1, text_length, mel_length)`
+</ParamField>
+
+<ParamField path="x_length" type="int" required>
+  Actual length of text/phoneme sequence
+</ParamField>
+
+<ParamField path="y_length" type="int" required>
+  Actual length of mel-spectrogram
+</ParamField>
+
+<ParamField path="filepath" type="str" required>
+  Original audio file path (used for naming output)
+</ParamField>
+
+<ParamField path="output_folder" type="Path" required>
+  Directory to save duration files
+</ParamField>
+
+<ParamField path="text" type="str" required>
+  Phoneme sequence for JSON output
+</ParamField>
+
+## Output Files
+
+For each utterance, two files are generated:
+
+### NumPy Array (.npy)
+
+```python
+import numpy as np
+
+durations = np.load("LJ001-0001.npy")
+# Shape: (text_length,)
+# Example: [3, 5, 2, 8, 4, ...]  # frames per phoneme
+```
+
+### JSON File (.json)
+
+```json
+{
+  "phonemes": ["pau", "HH", "EH", "L", "OW", "pau"],
+  "durations": [3, 5, 2, 8, 4, 2],
+  "total_frames": 24
+}
+```
+
+## Examples
+
+### Basic Usage
+
+```bash
+matcha-tts-get-durations \
+  -c checkpoints/best_model.ckpt \
+  -i ljspeech.yaml
+```
+
+Output:
+```
+Loading model...
+[+] matcha_custom loaded!
+Computing stats for training set if exists...
+🍵 Computing durations 🍵: 100%|██████████| 410/410 [02:15<00:00]
+Computing stats for validation set if exists...
+🍵 Computing durations 🍵: 100%|██████████| 50/50 [00:15<00:00]
+[+] Done! Data statistics saved to: data/ljspeech/durations
+```
+
+### Custom Output Folder
+
+```bash
+matcha-tts-get-durations \
+  -c model.ckpt \
+  -i vctk.yaml \
+  -o ./my_durations \
+  -b 64
+```
+
+### Force Overwrite
+
+```bash
+matcha-tts-get-durations \
+  -c model.ckpt \
+  -i ljspeech.yaml \
+  -f
+```
+
+### CPU Mode
+
+```bash
+matcha-tts-get-durations \
+  -c model.ckpt \
+  -i ljspeech.yaml \
+  --cpu
+```
+
+## Python Script Example
+
+```python
+import torch
+from pathlib import Path
+from matcha.models.matcha_tts import MatchaTTS
+from matcha.data.text_mel_datamodule import TextMelDataModule
+from matcha.utils.get_durations_from_trained_model import compute_durations
+
+# Load model
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = MatchaTTS.load_from_checkpoint(
+    "checkpoints/best_model.ckpt",
+    map_location=device
+)
+model.eval()
+
+# Setup data
+datamodule = TextMelDataModule(
+    train_filelist_path="data/ljspeech/train.txt",
+    valid_filelist_path="data/ljspeech/val.txt",
+    batch_size=32,
+    # ... other config
+)
+datamodule.setup()
+
+# Compute durations
+output_folder = Path("./durations")
+output_folder.mkdir(exist_ok=True)
+
+print("Processing training set...")
+train_loader = datamodule.train_dataloader()
+compute_durations(train_loader, model, device, output_folder)
+
+print("Processing validation set...")
+val_loader = datamodule.val_dataloader()
+compute_durations(val_loader, model, device, output_folder)
+
+print(f"Durations saved to {output_folder}")
+```
+
+## Duration Extraction Process
+
+1. **Forward Pass**: Run model with text and mel inputs
+2. **Get Alignment**: Extract attention matrix from MAS
+3. **Sum Durations**: Sum attention weights along mel dimension
+4. **Save Files**: Write NumPy and JSON files
+
+```python
+# Simplified extraction logic
+attn = model(x, x_lengths, y, y_lengths)[-1]  # Get alignment
+durations = attn.squeeze().sum(dim=1)[:x_length]  # Sum over mel frames
+```
+
+## Use Cases
+
+### Training Non-Autoregressive TTS
+
+Use extracted durations to train models that require ground-truth alignments:
+
+```python
+# In your TTS model
+durations = np.load(f"{audio_id}.npy")
+expanded_text = expand_with_durations(text, durations)
+```
+
+### Alignment Analysis
+
+Analyze alignment patterns:
+
+```python
+import matplotlib.pyplot as plt
+
+durations = np.load("LJ001-0001.npy")
+plt.bar(range(len(durations)), durations)
+plt.xlabel("Phoneme Index")
+plt.ylabel("Duration (frames)")
+plt.title("Phoneme Durations")
+plt.show()
+```
+
+### Prosody Transfer
+
+Transfer duration patterns between utterances:
+
+```python
+source_durations = np.load("source.npy")
+target_text = load_text("target.txt")
+# Apply source durations to target text
+```
+
+## Performance
+
+### Processing Speed
+
+For LJSpeech (13,100 samples):
+- **GPU (RTX 3090)**: ~3-5 minutes (batch_size=32)
+- **GPU (RTX 3090)**: ~2-3 minutes (batch_size=64)
+- **CPU**: ~45-60 minutes (batch_size=32)
+
+### Memory Usage
+
+- **Batch size 32**: ~4 GB GPU memory
+- **Batch size 64**: ~8 GB GPU memory
+- **Batch size 16**: ~2 GB GPU memory
+
+## Error Handling
+
+### Checkpoint Not Found
+
+```bash
+FileNotFoundError: Checkpoint not found: model.ckpt
+```
+
+Solution: Verify checkpoint path
+
+### Folder Already Exists
+
+```bash
+Folder already exists. Use -f to force overwrite
+```
+
+Solution: Use `-f` flag or delete folder
+
+### Out of Memory
+
+```bash
+RuntimeError: CUDA out of memory
+```
+
+Solution: Reduce batch size with `-b 16` or `-b 8`
+
+## Configuration Requirements
+
+Your data config must include:
+
+```yaml
+train_filelist_path: "data/train.txt"
+valid_filelist_path: "data/val.txt"
+batch_size: 32
+n_feats: 80
+# ... other parameters
+```
+
+## Output Structure
+
+```
+durations/
+├── LJ001-0001.npy
+├── LJ001-0001.json
+├── LJ001-0002.npy
+├── LJ001-0002.json
+└── ...
+```
+
+## Best Practices
+
+1. **Use trained model**: Ensure model is well-trained for accurate alignments
+2. **GPU inference**: Always use GPU unless absolutely necessary
+3. **Batch processing**: Use higher batch sizes for faster extraction
+4. **Verify outputs**: Spot-check some duration files for correctness
+5. **Version control**: Track which model checkpoint generated the durations
+
+## Integration Example
+
+Using durations in a dataloader:
+
+```python
+class TTSDataset(torch.utils.data.Dataset):
+    def __getitem__(self, idx):
+        audio_path, text = self.data[idx]
+        
+        # Load precomputed durations
+        duration_path = audio_path.replace(".wav", ".npy")
+        durations = np.load(duration_path)
+        
+        return {
+            "text": text,
+            "mel": load_mel(audio_path),
+            "durations": torch.from_numpy(durations)
+        }
+```
+
+## Related Commands
+
+- [matcha-tts](/api/cli#matcha-tts): Main synthesis command
+- [matcha-data-stats](/api/data-stats): Compute mel statistics
+
+## Source Reference
+
+Implementation: `matcha/utils/get_durations_from_trained_model.py:43`
+
+Entry Point: `setup.py:48`

@@ -1,0 +1,480 @@
+---
+title: Vocoder (HiFi-GAN)
+description: Neural vocoder for converting mel-spectrograms to audio
+---
+
+## Overview
+
+Matcha-TTS uses HiFi-GAN as the neural vocoder to convert generated mel-spectrograms into high-quality audio waveforms. The vocoder is a separate model that runs after Matcha-TTS synthesis.
+
+## Available Vocoders
+
+### hifigan_T2_v1
+
+Optimized for single-speaker LJSpeech model.
+
+```python
+from matcha.hifigan.models import Generator
+from matcha.hifigan.config import v1
+from matcha.hifigan.env import AttrDict
+
+h = AttrDict(v1)
+vocoder = Generator(h)
+vocoder.load_state_dict(
+    torch.load("hifigan_T2_v1", map_location="cuda")["generator"]
+)
+vocoder.eval()
+vocoder.remove_weight_norm()
+```
+
+**Specifications:**
+- Sample rate: 22,050 Hz
+- Mel channels: 80
+- Optimized for: LJSpeech dataset
+- Use with: `matcha_ljspeech`
+
+### hifigan_univ_v1
+
+Universal vocoder for multi-speaker models.
+
+```python
+vocoder = Generator(h)
+vocoder.load_state_dict(
+    torch.load("hifigan_univ_v1", map_location="cuda")["generator"]
+)
+vocoder.eval()
+vocoder.remove_weight_norm()
+```
+
+**Specifications:**
+- Sample rate: 22,050 Hz
+- Mel channels: 80
+- Optimized for: Multi-speaker datasets (VCTK, etc.)
+- Use with: `matcha_vctk` and custom models
+
+## Generator Class
+
+### Generator
+
+Main HiFi-GAN generator network.
+
+```python
+from matcha.hifigan.models import Generator
+from matcha.hifigan.env import AttrDict
+from matcha.hifigan.config import v1
+
+h = AttrDict(v1)
+vocoder = Generator(h)
+```
+
+#### Configuration
+
+<ParamField path="h.resblock" type="str" required>
+  Residual block type: "1" or "2"
+</ParamField>
+
+<ParamField path="h.upsample_rates" type="list[int]" required>
+  Upsampling rates for each layer (e.g., [8, 8, 2, 2])
+</ParamField>
+
+<ParamField path="h.upsample_kernel_sizes" type="list[int]" required>
+  Kernel sizes for upsampling layers
+</ParamField>
+
+<ParamField path="h.upsample_initial_channel" type="int" required>
+  Number of channels after initial convolution (e.g., 512)
+</ParamField>
+
+<ParamField path="h.resblock_kernel_sizes" type="list[int]" required>
+  Kernel sizes for residual blocks
+</ParamField>
+
+<ParamField path="h.resblock_dilation_sizes" type="list[list[int]]" required>
+  Dilation rates for residual blocks
+</ParamField>
+
+### Methods
+
+#### forward()
+
+Generate waveform from mel-spectrogram.
+
+```python
+def forward(x: torch.Tensor) -> torch.Tensor
+```
+
+**Parameters:**
+
+<ParamField path="x" type="torch.Tensor" required>
+  Mel-spectrogram input
+  
+  **Shape:** `(batch_size, 80, mel_length)`
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="waveform" type="torch.Tensor">
+  Generated audio waveform
+  
+  **Shape:** `(batch_size, 1, audio_length)`
+  
+  Audio length = mel_length * hop_length (typically 256)
+</ResponseField>
+
+#### remove_weight_norm()
+
+Removes weight normalization for faster inference.
+
+```python
+vocoder.remove_weight_norm()
+```
+
+Always call this after loading weights and before inference.
+
+## Denoiser
+
+### Denoiser
+
+Post-processing denoiser to reduce artifacts.
+
+```python
+from matcha.hifigan.denoiser import Denoiser
+
+denoiser = Denoiser(vocoder, mode="zeros")
+```
+
+#### Parameters
+
+<ParamField path="vocoder" type="Generator" required>
+  The HiFi-GAN generator model
+</ParamField>
+
+<ParamField path="mode" type="str" default="zeros">
+  Denoising mode: "zeros" or "normal"
+</ParamField>
+
+#### Methods
+
+```python
+def __call__(
+    audio: torch.Tensor,
+    strength: float = 0.00025
+) -> torch.Tensor
+```
+
+**Parameters:**
+
+<ParamField path="audio" type="torch.Tensor" required>
+  Input audio waveform
+  
+  **Shape:** `(audio_length,)` or `(1, audio_length)`
+</ParamField>
+
+<ParamField path="strength" type="float" default="0.00025">
+  Denoising strength. Higher values = more denoising but may affect quality
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="denoised_audio" type="torch.Tensor">
+  Denoised audio waveform
+</ResponseField>
+
+## Complete Usage Example
+
+### Loading Vocoder
+
+```python
+import torch
+from matcha.hifigan.models import Generator
+from matcha.hifigan.config import v1
+from matcha.hifigan.env import AttrDict
+from matcha.hifigan.denoiser import Denoiser
+
+def load_vocoder(checkpoint_path: str, device: str = "cuda"):
+    """Load HiFi-GAN vocoder."""
+    
+    # Load configuration
+    h = AttrDict(v1)
+    
+    # Create model
+    vocoder = Generator(h).to(device)
+    
+    # Load weights
+    state_dict = torch.load(checkpoint_path, map_location=device)
+    vocoder.load_state_dict(state_dict["generator"])
+    
+    # Prepare for inference
+    vocoder.eval()
+    vocoder.remove_weight_norm()
+    
+    # Create denoiser
+    denoiser = Denoiser(vocoder, mode="zeros")
+    
+    return vocoder, denoiser
+
+# Usage
+vocoder, denoiser = load_vocoder("hifigan_T2_v1")
+```
+
+### Mel to Audio Conversion
+
+```python
+import torch
+import soundfile as sf
+
+def mel_to_audio(
+    mel: torch.Tensor,
+    vocoder,
+    denoiser=None,
+    denoiser_strength: float = 0.00025
+) -> torch.Tensor:
+    """Convert mel-spectrogram to audio waveform."""
+    
+    with torch.inference_mode():
+        # Generate audio
+        audio = vocoder(mel)
+        
+        # Clamp to valid range
+        audio = audio.clamp(-1, 1)
+        
+        # Apply denoising
+        if denoiser is not None:
+            audio = denoiser(
+                audio.squeeze(),
+                strength=denoiser_strength
+            )
+        
+        # Move to CPU
+        audio = audio.cpu().squeeze()
+    
+    return audio
+
+# Usage
+mel = torch.randn(1, 80, 100).cuda()  # Example mel
+audio = mel_to_audio(mel, vocoder, denoiser)
+
+# Save audio
+sf.write("output.wav", audio.numpy(), 22050)
+```
+
+### End-to-End Synthesis
+
+```python
+import torch
+from matcha.models.matcha_tts import MatchaTTS
+from matcha.text import text_to_sequence
+from matcha.utils.utils import intersperse
+
+def synthesize(
+    text: str,
+    matcha_model,
+    vocoder,
+    denoiser=None,
+    n_timesteps: int = 10,
+    temperature: float = 0.667,
+    length_scale: float = 1.0,
+    denoiser_strength: float = 0.00025
+):
+    """Full text-to-speech synthesis."""
+    
+    device = next(matcha_model.parameters()).device
+    
+    # Preprocess text
+    sequence, _ = text_to_sequence(text, ["english_cleaners2"])
+    sequence = intersperse(sequence, 0)
+    x = torch.LongTensor(sequence).unsqueeze(0).to(device)
+    x_lengths = torch.LongTensor([len(sequence)]).to(device)
+    
+    # Generate mel-spectrogram
+    output = matcha_model.synthesise(
+        x=x,
+        x_lengths=x_lengths,
+        n_timesteps=n_timesteps,
+        temperature=temperature,
+        length_scale=length_scale
+    )
+    
+    # Convert to audio
+    mel = output["mel"]
+    audio = vocoder(mel).clamp(-1, 1)
+    
+    if denoiser is not None:
+        audio = denoiser(audio.squeeze(), strength=denoiser_strength)
+    
+    return {
+        "audio": audio.cpu().squeeze().numpy(),
+        "mel": mel.cpu().squeeze().numpy(),
+        "rtf": output["rtf"]
+    }
+
+# Usage
+result = synthesize(
+    "Hello, this is a test.",
+    matcha_model,
+    vocoder,
+    denoiser,
+    n_timesteps=10
+)
+
+import soundfile as sf
+sf.write("output.wav", result["audio"], 22050)
+print(f"RTF: {result['rtf']:.4f}")
+```
+
+## Model Architecture
+
+HiFi-GAN uses a multi-scale architecture:
+
+1. **Input**: 80-channel mel-spectrogram
+2. **Initial Conv**: Expand to 512 channels
+3. **Upsampling**: Multiple transposed convolutions (8x → 8x → 2x → 2x)
+4. **Residual Blocks**: Multi-receptive field fusion (MRF)
+5. **Output**: Single-channel waveform
+
+```
+Mel (80, T) → Conv1d → (512, T)
+    ↓
+Upsample (8x) → (512, 8T)
+    ↓
+Upsample (8x) → (256, 64T)
+    ↓
+Upsample (2x) → (128, 128T)
+    ↓
+Upsample (2x) → (64, 256T)
+    ↓
+Conv1d → Waveform (1, 256T)
+```
+
+Total upsampling: 8 × 8 × 2 × 2 = 256 (hop length)
+
+## Performance
+
+### Speed
+
+**On RTX 3090:**
+- Single utterance: ~0.001 RTF (1000x faster than real-time)
+- Batch of 32: ~0.01 RTF
+
+**On CPU:**
+- Single utterance: ~0.1 RTF (10x faster than real-time)
+
+### Memory
+
+- Model size: ~14 MB
+- GPU memory: ~200 MB
+- Inference: Minimal additional memory
+
+## Configuration Details
+
+### v1 Config
+
+```python
+from matcha.hifigan.config import v1
+
+print(v1)
+# {
+#     "resblock": "1",
+#     "num_gpus": 0,
+#     "batch_size": 16,
+#     "learning_rate": 0.0002,
+#     "adam_b1": 0.8,
+#     "adam_b2": 0.99,
+#     "lr_decay": 0.999,
+#     "seed": 1234,
+#     "upsample_rates": [8, 8, 2, 2],
+#     "upsample_kernel_sizes": [16, 16, 4, 4],
+#     "upsample_initial_channel": 512,
+#     "resblock_kernel_sizes": [3, 7, 11],
+#     "resblock_dilation_sizes": [[1, 3, 5], [1, 3, 5], [1, 3, 5]]
+# }
+```
+
+## Denoising Strategies
+
+### No Denoising
+
+```python
+audio = vocoder(mel).clamp(-1, 1).cpu().squeeze()
+```
+
+Fastest but may have artifacts.
+
+### Light Denoising
+
+```python
+audio = denoiser(audio, strength=0.00025)
+```
+
+Balanced quality and speed (recommended).
+
+### Heavy Denoising
+
+```python
+audio = denoiser(audio, strength=0.001)
+```
+
+Cleaner but may affect naturalness.
+
+## Best Practices
+
+1. **Remove weight norm**: Always call `remove_weight_norm()` before inference
+2. **Use matching vocoder**: LJSpeech → hifigan_T2_v1, VCTK → hifigan_univ_v1
+3. **Clamp outputs**: Always clamp audio to [-1, 1] range
+4. **Batch processing**: Process multiple mels together for efficiency
+5. **Denoising**: Use light denoising (0.00025) for best quality/speed trade-off
+
+## Custom Vocoder
+
+To use a different vocoder:
+
+```python
+class CustomVocoder:
+    def __init__(self, checkpoint_path):
+        # Load your vocoder
+        pass
+    
+    def __call__(self, mel: torch.Tensor) -> torch.Tensor:
+        # mel: (batch, 80, time)
+        # return: (batch, 1, time * hop_length)
+        pass
+
+# Use with Matcha-TTS
+vocoder = CustomVocoder("model.pt")
+audio = vocoder(mel)
+```
+
+## Troubleshooting
+
+### Artifacts in Audio
+
+```python
+# Increase denoiser strength
+audio = denoiser(audio, strength=0.0005)
+```
+
+### Clipping/Distortion
+
+```python
+# Ensure proper clamping
+audio = vocoder(mel).clamp(-1, 1)
+```
+
+### Slow Inference
+
+```python
+# Check weight norm was removed
+vocoder.remove_weight_norm()
+
+# Use GPU
+vocoder = vocoder.cuda()
+mel = mel.cuda()
+```
+
+## Source Reference
+
+Implementation: `matcha/hifigan/models.py:148`
+
+Denoiser: `matcha/hifigan/denoiser.py`
+
+Config: `matcha/hifigan/config.py`
